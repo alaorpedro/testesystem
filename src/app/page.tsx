@@ -1,65 +1,63 @@
-import Image from "next/image";
+import Link from 'next/link';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Sparkles } from 'lucide-react';
 
-export default function Home() {
+export default function LoginPage() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="min-h-screen flex items-center justify-center bg-background p-4 relative overflow-hidden font-sans">
+      {/* Gradients and glow as per brand manual */}
+      <div className="absolute top-1/3 left-1/4 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-primary/20 rounded-full blur-[120px] opacity-70 pointer-events-none" />
+      <div className="absolute bottom-1/4 right-1/4 w-[600px] h-[600px] bg-secondary/20 rounded-full blur-[150px] opacity-60 pointer-events-none" />
+      
+      {/* Subtle grid pattern for digital feel */}
+      <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMSIgY3k9IjEiIHI9IjEiIGZpbGw9InJnYmEoMjU1LDI1NSwyNTUsMC4wNSkiLz48L3N2Zz4=')] opacity-50" />
+
+      <div className="w-full max-w-md bg-card/80 backdrop-blur-2xl border border-primary/30 rounded-2xl p-10 shadow-[0_0_40px_rgba(85,245,47,0.05)] relative z-10">
+        <div className="flex flex-col items-center mb-10">
+          <div className="flex items-center gap-2 mb-6">
+            <span className="text-4xl font-heading tracking-wider text-foreground">ONMID</span>
+            <div className="w-10 h-5 bg-[#55F52F] rounded-full flex items-center p-[2px] relative shadow-[0_0_15px_rgba(85,245,47,0.4)]">
+              <div className="w-4 h-4 bg-[#111] rounded-full absolute right-[2px]"></div>
+            </div>
+          </div>
+          <h1 className="text-3xl font-heading tracking-wider text-foreground uppercase">Acesso Restrito</h1>
+          <p className="text-sm text-muted-foreground mt-2 font-medium">Plataforma de Relatórios Estratégicos</p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+
+        <div className="space-y-5">
+          <div className="space-y-2">
+            <Label htmlFor="email" className="text-foreground/80 uppercase text-xs tracking-wider">E-mail corporativo</Label>
+            <Input id="email" type="email" placeholder="nome@onmid.com.br" className="bg-background border-border/50 focus-visible:border-primary focus-visible:ring-1 focus-visible:ring-primary h-12" />
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password" className="text-foreground/80 uppercase text-xs tracking-wider">Senha</Label>
+              <Link href="#" className="text-xs text-primary hover:underline transition-all">Esqueci minha senha</Link>
+            </div>
+            <Input id="password" type="password" className="bg-background border-border/50 focus-visible:border-primary focus-visible:ring-1 focus-visible:ring-primary h-12" />
+          </div>
+          
+          <Button
+            render={<Link href="/dashboard" />}
+            nativeButton={false}
+            className="w-full h-12 mt-8 bg-primary text-primary-foreground hover:bg-primary/90 font-bold uppercase tracking-wider shadow-[0_0_15px_rgba(85,245,47,0.3)] hover:shadow-[0_0_25px_rgba(85,245,47,0.5)] transition-all rounded-lg border-none"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+            Entrar
+          </Button>
         </div>
-      </main>
+      </div>
+
+      <div className="absolute bottom-8 left-8 flex items-center gap-3 text-xs font-medium text-muted-foreground z-10">
+        <div className="w-8 h-8 rounded border border-border flex items-center justify-center bg-card">
+          <Sparkles className="w-4 h-4 text-primary" />
+        </div>
+        <div>
+          <p className="text-foreground uppercase tracking-widest font-bold">Estratégico por dentro.</p>
+          <p className="text-primary uppercase tracking-widest font-bold">Criativo por natureza.</p>
+        </div>
+      </div>
     </div>
   );
 }

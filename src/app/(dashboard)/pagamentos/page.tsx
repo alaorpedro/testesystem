@@ -1,0 +1,652 @@
+"use client";
+
+import Link from 'next/link';
+import { useState } from 'react';
+import {
+  AlertTriangle,
+  CalendarDays,
+  CheckCircle2,
+  Clock3,
+  Eye,
+  Filter,
+  Send,
+  Trash2,
+  WalletCards,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { mockClients } from '@/lib/mock-data';
+import {
+  type InvestmentPayment,
+  type PaymentChannel,
+  type PaymentStatus,
+  PAYMENT_CHANNELS,
+  PAYMENT_STATUS_OPTIONS,
+  useInvestmentPayments,
+} from '@/lib/payment-store';
+import { getHoliday, previousBusinessDay, formatDateBR as formatHolidayDateBR } from '@/lib/holidays';
+import { cn, formatCurrencyBRL, formatCurrencyInputBRL, parseCurrencyBRL } from '@/lib/utils';
+
+type ViewMode = 'dia' | 'semana' | 'mes';
+
+const STATUS_STYLES: Record<PaymentStatus, string> = {
+  Pendente: 'bg-orange-500/20 text-orange-300 border-orange-400/30',
+  Enviado: 'bg-sky-500/20 text-sky-300 border-sky-400/30',
+  Pago: 'bg-primary/20 text-primary border-primary/30',
+  'Em atraso': 'bg-red-500/20 text-red-300 border-red-400/30',
+};
+
+const CHANNEL_STYLES: Record<PaymentChannel, string> = {
+  'Meta ADS': 'bg-blue-500/20 text-blue-300 border-blue-400/30',
+  'Google ADS': 'bg-red-500/20 text-red-300 border-red-400/30',
+  'TikTok ADS': 'bg-foreground/10 text-foreground border-border',
+};
+
+const WEEKDAY_LABELS = ['SEGUNDA', 'TERÇA', 'QUARTA', 'QUINTA', 'SEXTA'];
+const WEEKDAY_COLORS = [
+  'bg-emerald-600',
+  'bg-fuchsia-600',
+  'bg-blue-700',
+  'bg-violet-700',
+  'bg-orange-500',
+];
+
+function makeDate(day: number): string {
+  return `2026-05-${String(day).padStart(2, '0')}`;
+}
+
+function formatDateBR(date: string): string {
+  const [year, month, day] = date.split('-');
+  return `${day}/${month}/${year}`;
+}
+
+function parseDate(date: string): Date {
+  const [year, month, day] = date.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function toISODate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function getWeekDates(date: string): string[] {
+  const base = parseDate(date);
+  const weekday = base.getDay();
+  const mondayOffset = weekday === 0 ? -6 : 1 - weekday;
+  const monday = new Date(base);
+  monday.setDate(base.getDate() + mondayOffset);
+
+  return Array.from({ length: 5 }, (_, index) => {
+    const day = new Date(monday);
+    day.setDate(monday.getDate() + index);
+    return toISODate(day);
+  });
+}
+
+function getMonthWeekdays(date: string): string[] {
+  const base = parseDate(date);
+  const year = base.getFullYear();
+  const month = base.getMonth();
+  const totalDays = new Date(year, month + 1, 0).getDate();
+  const result: string[] = [];
+
+  for (let day = 1; day <= totalDays; day++) {
+    const current = new Date(year, month, day);
+    const weekday = current.getDay();
+    if (weekday !== 0 && weekday !== 6) result.push(toISODate(current));
+  }
+
+  return result;
+}
+
+function getMonthBusinessWeeks(date: string): string[][] {
+  const base = parseDate(date);
+  const year = base.getFullYear();
+  const month = base.getMonth();
+  const totalDays = new Date(year, month + 1, 0).getDate();
+  const weeks: string[][] = [];
+  let week = Array<string>(5).fill('');
+
+  for (let day = 1; day <= totalDays; day++) {
+    const current = new Date(year, month, day);
+    const weekday = current.getDay();
+
+    if (weekday === 0 || weekday === 6) continue;
+
+    const col = weekday - 1;
+    week[col] = toISODate(current);
+
+    if (col === 4) {
+      weeks.push(week);
+      week = Array<string>(5).fill('');
+    }
+  }
+
+  if (week.some(Boolean)) weeks.push(week);
+  return weeks;
+}
+
+function isDateInView(date: string, selectedDate: string, viewMode: ViewMode): boolean {
+  if (viewMode === 'dia') return date === selectedDate;
+  if (viewMode === 'semana') return getWeekDates(selectedDate).includes(date);
+
+  const current = parseDate(date);
+  const selected = parseDate(selectedDate);
+  return current.getFullYear() === selected.getFullYear() && current.getMonth() === selected.getMonth();
+}
+
+function scopeLabel(selectedDate: string, viewMode: ViewMode): string {
+  if (viewMode === 'dia') return formatDateBR(selectedDate);
+  if (viewMode === 'semana') {
+    const week = getWeekDates(selectedDate);
+    return `${formatDateBR(week[0])} a ${formatDateBR(week[week.length - 1])}`;
+  }
+
+  const date = parseDate(selectedDate);
+  return date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+}
+
+function StatusDropdown({ value, onChange }: { value: PaymentStatus; onChange: (status: PaymentStatus) => void }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="space-y-1">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className={cn('h-7 min-w-24 rounded-md border px-2 text-left text-[10px] font-bold transition-colors', STATUS_STYLES[value])}
+      >
+        {value}
+      </button>
+      {open && (
+        <div className="grid w-44 grid-cols-2 gap-1 rounded-lg border border-border bg-popover p-1 shadow-lg">
+          {PAYMENT_STATUS_OPTIONS.filter((status) => status !== value).map((status) => (
+            <button
+              key={status}
+              type="button"
+              onClick={() => {
+                onChange(status);
+                setOpen(false);
+              }}
+              className="h-7 rounded-md px-2 text-[10px] font-bold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              {status}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HolidayPaymentNotice({ date, compact = false }: { date: string; compact?: boolean }) {
+  const holiday = getHoliday(date);
+  if (!holiday) return null;
+
+  const sendDate = previousBusinessDay(date);
+
+  return (
+    <div className={cn(
+      'rounded-lg border border-orange-400/30 bg-orange-500/10 text-orange-200',
+      compact ? 'px-2 py-1 text-[10px]' : 'px-3 py-2 text-xs',
+    )}>
+      <div className="flex items-start gap-1.5">
+        <AlertTriangle className={cn('shrink-0', compact ? 'mt-0.5 h-3 w-3' : 'mt-0.5 h-4 w-4')} />
+        <div>
+          <p className="font-bold">{holiday.name}</p>
+          <p className="text-orange-200/80">Enviar Pix até {formatHolidayDateBR(sendDate)}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatusFilter({ value, onChange }: {
+  value: PaymentStatus | 'Todos';
+  onChange: (status: PaymentStatus | 'Todos') => void;
+}) {
+  const options: Array<PaymentStatus | 'Todos'> = ['Todos', ...PAYMENT_STATUS_OPTIONS];
+
+  return (
+    <div className="flex flex-wrap gap-1 rounded-lg border border-border bg-card p-1">
+      {options.map((status) => {
+        const selected = status === value;
+
+        return (
+          <button
+            key={status}
+            type="button"
+            onClick={() => onChange(status)}
+            className={cn(
+              'h-7 rounded-md px-2 text-[10px] font-bold transition-colors',
+              selected
+                ? status === 'Todos' ? 'bg-foreground/10 text-foreground' : STATUS_STYLES[status]
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+            )}
+          >
+            {status}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function CurrencyInput({ value, onChange, className }: {
+  value: number;
+  onChange: (value: number) => void;
+  className?: string;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={draft ?? formatCurrencyInputBRL(value)}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        onChange(parseCurrencyBRL(e.target.value));
+      }}
+      onFocus={() => setDraft(formatCurrencyInputBRL(value))}
+      onBlur={(e) => {
+        onChange(parseCurrencyBRL(e.target.value));
+        setDraft(null);
+      }}
+      className={className}
+    />
+  );
+}
+
+export default function PagamentosPage() {
+  const { payments, addPayment, updatePaymentStatus, deletePayment } = useInvestmentPayments();
+  const [selectedDate, setSelectedDate] = useState(makeDate(6));
+  const [viewMode, setViewMode] = useState<ViewMode>('dia');
+  const [statusFilter, setStatusFilter] = useState<PaymentStatus | 'Todos'>('Todos');
+  const [channelFilter, setChannelFilter] = useState<PaymentChannel | 'Todos'>('Todos');
+  const [newPayment, setNewPayment] = useState<Omit<InvestmentPayment, 'id'>>({
+    clientId: mockClients[0]?.id ?? '1',
+    clientName: mockClients[0]?.name ?? 'Cliente',
+    date: makeDate(6),
+    destination: `${mockClients[0]?.name ?? 'Cliente'} - Novo investimento`,
+    amount: 500,
+    channel: 'Meta ADS',
+    status: 'Pendente',
+  });
+
+  const filteredPayments = payments.filter((payment) => {
+    const dateMatches = isDateInView(payment.date, selectedDate, viewMode);
+    const statusMatches = statusFilter === 'Todos' || payment.status === statusFilter;
+    const channelMatches = channelFilter === 'Todos' || payment.channel === channelFilter;
+    return dateMatches && statusMatches && channelMatches;
+  });
+
+  const selectedScopePayments = payments.filter((payment) => isDateInView(payment.date, selectedDate, viewMode));
+  const totalDay = selectedScopePayments.reduce((sum, payment) => sum + payment.amount, 0);
+  const pendingDay = selectedScopePayments.filter((payment) => payment.status === 'Pendente').reduce((sum, payment) => sum + payment.amount, 0);
+  const sentDay = selectedScopePayments.filter((payment) => payment.status === 'Enviado').reduce((sum, payment) => sum + payment.amount, 0);
+  const paidDay = selectedScopePayments.filter((payment) => payment.status === 'Pago').reduce((sum, payment) => sum + payment.amount, 0);
+  const overdueDay = selectedScopePayments.filter((payment) => payment.status === 'Em atraso').reduce((sum, payment) => sum + payment.amount, 0);
+
+  const availableDates = Array.from(new Set(payments.map((payment) => payment.date))).sort();
+  const weekDates = getWeekDates(selectedDate);
+  const monthWeeks = getMonthBusinessWeeks(selectedDate);
+  const summaryLabel = viewMode === 'dia' ? 'do dia' : 'do período';
+
+  function handleClientChange(clientId: string) {
+    const client = mockClients.find((item) => item.id === clientId);
+    if (!client) return;
+
+    setNewPayment((prev) => ({
+      ...prev,
+      clientId: client.id,
+      clientName: client.name,
+      destination: `${client.name} - Novo investimento`,
+    }));
+  }
+
+  function handleAddPayment() {
+    if (!newPayment.clientId || !newPayment.destination.trim() || newPayment.amount <= 0) return;
+
+    addPayment({ ...newPayment, destination: newPayment.destination.trim() });
+    setSelectedDate(newPayment.date);
+    setNewPayment((prev) => ({ ...prev, destination: `${prev.clientName} - Novo investimento`, amount: 500 }));
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Acompanhamento de Pagamentos</h1>
+          <p className="text-muted-foreground mt-1">Veja os Pix de investimento por dia, semana ou mês para todos os clientes cadastrados.</p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex rounded-lg border border-border bg-card p-1">
+            {([
+              { key: 'dia' as ViewMode, label: 'Dia' },
+              { key: 'semana' as ViewMode, label: 'Semana' },
+              { key: 'mes' as ViewMode, label: 'Mês' },
+            ]).map((mode) => (
+              <button
+                key={mode.key}
+                type="button"
+                onClick={() => setViewMode(mode.key)}
+                className={cn(
+                  'h-7 rounded-md px-3 text-xs font-bold transition-colors',
+                  viewMode === mode.key ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {mode.label}
+              </button>
+            ))}
+          </div>
+          <CalendarDays className="w-4 h-4 text-muted-foreground" />
+          <Input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="w-40 bg-card"
+          />
+          <HolidayPaymentNotice date={selectedDate} compact />
+        </div>
+      </div>
+
+      <div className="bg-card border border-border rounded-xl p-4">
+        <div className="flex items-end gap-3 flex-wrap">
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Cliente</p>
+            <select
+              value={newPayment.clientId}
+              onChange={(e) => handleClientChange(e.target.value)}
+              className="h-9 min-w-44 rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              {mockClients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Data</p>
+            <Input
+              type="date"
+              value={newPayment.date}
+              onChange={(e) => setNewPayment((prev) => ({ ...prev, date: e.target.value }))}
+              className="w-40 bg-background"
+            />
+          </div>
+          <div className="space-y-1.5 flex-1 min-w-56">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Destino / Campanha</p>
+            <Input
+              value={newPayment.destination}
+              onChange={(e) => setNewPayment((prev) => ({ ...prev, destination: e.target.value }))}
+              className="bg-background"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Canal</p>
+            <select
+              value={newPayment.channel}
+              onChange={(e) => setNewPayment((prev) => ({ ...prev, channel: e.target.value as PaymentChannel }))}
+              className="h-9 w-32 rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              {PAYMENT_CHANNELS.filter((channel) => channel !== 'Todos').map((channel) => <option key={channel}>{channel}</option>)}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Valor</p>
+            <div className="flex h-9 w-36 items-center gap-2 rounded-lg border border-input bg-background px-3">
+              <span className="text-sm font-bold text-muted-foreground">R$</span>
+              <CurrencyInput
+                value={newPayment.amount}
+                onChange={(amount) => setNewPayment((prev) => ({ ...prev, amount }))}
+                className="min-w-0 flex-1 bg-transparent text-sm font-semibold focus:outline-none"
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Status</p>
+            <StatusDropdown
+              value={newPayment.status}
+              onChange={(status) => setNewPayment((prev) => ({ ...prev, status }))}
+            />
+          </div>
+          <Button onClick={handleAddPayment} className="bg-primary text-primary-foreground hover:bg-primary/90">
+            Adicionar Pix
+          </Button>
+        </div>
+        <div className="mt-3">
+          <HolidayPaymentNotice date={newPayment.date} />
+        </div>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-5">
+        {[
+          { label: `Total ${summaryLabel}`, value: totalDay, icon: WalletCards, tone: 'text-foreground' },
+          { label: 'Pendente', value: pendingDay, icon: Clock3, tone: 'text-orange-300' },
+          { label: 'Enviado', value: sentDay, icon: Send, tone: 'text-sky-300' },
+          { label: 'Pago', value: paidDay, icon: CheckCircle2, tone: 'text-primary' },
+          { label: 'Em atraso', value: overdueDay, icon: AlertTriangle, tone: 'text-red-300' },
+        ].map(({ label, value, icon: Icon, tone }) => (
+          <div key={label} className="bg-card border border-border rounded-xl p-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{label}</p>
+              <Icon className={cn('w-4 h-4 shrink-0', tone)} />
+            </div>
+            <p className={cn('text-2xl font-bold font-heading mt-3', tone)}>{formatCurrencyBRL(value)}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex gap-2 overflow-x-auto pb-2">
+        {availableDates.map((date) => {
+          const count = payments.filter((payment) => payment.date === date).length;
+          const selected = viewMode === 'dia' ? date === selectedDate : isDateInView(date, selectedDate, viewMode);
+          const holiday = getHoliday(date);
+
+          return (
+            <button
+              key={date}
+              type="button"
+              onClick={() => setSelectedDate(date)}
+              className={cn(
+                'min-w-32 rounded-lg border px-3 py-2 text-left transition-colors',
+                selected ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-card hover:bg-muted/50',
+              )}
+            >
+              <p className="text-xs font-bold">{formatDateBR(date)}</p>
+              <p className="text-[11px] text-muted-foreground mt-1">{count} Pix programado{count === 1 ? '' : 's'}</p>
+              {holiday && <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-orange-300">{holiday.name}</p>}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="font-bold text-sm uppercase tracking-wider">Pix de {scopeLabel(selectedDate, viewMode)}</h2>
+          <p className="text-xs text-muted-foreground mt-1">{filteredPayments.length} lançamento{filteredPayments.length === 1 ? '' : 's'} visível{filteredPayments.length === 1 ? '' : 's'} após filtros.</p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Filter className="w-4 h-4 text-muted-foreground" />
+          <select
+            value={channelFilter}
+            onChange={(e) => setChannelFilter(e.target.value as PaymentChannel | 'Todos')}
+            className="h-8 rounded-lg border border-border bg-card px-2 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            {PAYMENT_CHANNELS.map((channel) => <option key={channel}>{channel}</option>)}
+          </select>
+          <StatusFilter value={statusFilter} onChange={setStatusFilter} />
+        </div>
+      </div>
+
+      {viewMode === 'semana' && (
+        <div className="grid gap-3 lg:grid-cols-5">
+          {weekDates.map((date, dateIndex) => {
+            const dayPayments = filteredPayments.filter((payment) => payment.date === date);
+            const hasPayments = dayPayments.length > 0;
+            const holiday = getHoliday(date);
+
+            return (
+              <div key={date} className={cn('min-h-52 rounded-xl border overflow-hidden', holiday ? 'border-orange-400/40 bg-orange-500/5' : hasPayments ? 'border-border bg-card' : 'border-border/30 bg-card/25 opacity-45')}>
+                <div className={cn('px-3 py-2 text-xs font-bold', hasPayments || holiday ? cn('text-white', WEEKDAY_COLORS[dateIndex]) : 'bg-muted/20 text-muted-foreground/50')}>
+                  {formatDateBR(date)}
+                </div>
+                <div className="p-2 space-y-2">
+                  <HolidayPaymentNotice date={date} compact />
+                  {hasPayments ? dayPayments.map((payment) => (
+                    <div key={payment.id} className="rounded-lg bg-muted/35 p-2 text-xs">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-bold">{payment.clientName}</p>
+                          <p className="font-bold mt-1">{formatCurrencyBRL(payment.amount)}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => deletePayment(payment.id)}
+                          className="rounded-md p-1 text-muted-foreground/60 hover:bg-red-500/10 hover:text-red-300"
+                          title="Apagar programação"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-bold', CHANNEL_STYLES[payment.channel])}>{payment.channel}</span>
+                      </div>
+                      <div className="mt-2">
+                        <StatusDropdown value={payment.status} onChange={(status) => updatePaymentStatus(payment.id, status)} />
+                      </div>
+                    </div>
+                  )) : <div className="h-24" />}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {viewMode === 'mes' && (
+        <div className="overflow-x-auto pb-2">
+          <div className="min-w-[980px] space-y-2">
+            <div className="grid grid-cols-5 gap-2">
+              {WEEKDAY_LABELS.map((label, idx) => (
+                <div key={label} className={cn('rounded-t-lg px-3 py-2 text-center text-xs font-bold tracking-widest text-white', WEEKDAY_COLORS[idx])}>
+                  {label}
+                </div>
+              ))}
+            </div>
+            {monthWeeks.map((week, weekIndex) => (
+              <div key={weekIndex} className="grid grid-cols-5 gap-2">
+                {week.map((date, dayIndex) => {
+                  const dayPayments = filteredPayments.filter((payment) => payment.date === date);
+                  const hasPayments = dayPayments.length > 0;
+                  const holiday = date ? getHoliday(date) : undefined;
+
+                  return (
+                    <div
+                      key={`${weekIndex}-${dayIndex}`}
+                      className={cn(
+                        'min-h-[150px] rounded-b-lg border overflow-hidden',
+                        holiday ? 'border-orange-400/40 bg-orange-500/5' : hasPayments ? 'border-border bg-card' : 'border-border/30 bg-card/25 opacity-45',
+                      )}
+                    >
+                      {date ? (
+                        <>
+                          <div className={cn('px-3 py-2 text-center text-xs font-bold', hasPayments || holiday ? cn('text-white', WEEKDAY_COLORS[dayIndex]) : 'bg-muted/20 text-muted-foreground/50')}>
+                            {formatDateBR(date)}
+                          </div>
+                          <div className="p-2 space-y-1.5">
+                            <HolidayPaymentNotice date={date} compact />
+                            {hasPayments ? dayPayments.map((payment) => (
+                              <div key={payment.id} className="rounded-md bg-muted/35 p-2 text-xs">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="font-bold truncate">{payment.clientName}</p>
+                                    <p className="text-[11px] font-bold mt-1">{formatCurrencyBRL(payment.amount)}</p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => deletePayment(payment.id)}
+                                    className="rounded-md p-1 text-muted-foreground/60 hover:bg-red-500/10 hover:text-red-300"
+                                    title="Apagar programação"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                                <div className="mt-2">
+                                  <StatusDropdown value={payment.status} onChange={(status) => updatePaymentStatus(payment.id, status)} />
+                                </div>
+                              </div>
+                            )) : <div className="h-20" />}
+                          </div>
+                        </>
+                      ) : (
+                        <div className="h-full bg-muted/20" />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {viewMode === 'dia' && (
+      <div className="bg-card border border-border rounded-xl overflow-hidden">
+        <div className="grid grid-cols-[minmax(180px,1.3fr)_110px_130px_130px_112px] gap-3 px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground border-b border-border">
+          <span>Cliente</span>
+          <span>Canal</span>
+          <span>Valor</span>
+          <span>Status</span>
+          <span className="text-right">Ações</span>
+        </div>
+
+        {filteredPayments.length > 0 ? (
+          <div className="divide-y divide-border">
+            {filteredPayments.map((payment) => (
+              <div key={payment.id} className="grid grid-cols-[minmax(180px,1.3fr)_110px_130px_130px_112px] gap-3 px-4 py-3 items-center text-sm hover:bg-muted/35 transition-colors">
+                <div>
+                  <p className="font-bold">{payment.clientName}</p>
+                  <p className="text-xs text-muted-foreground">{formatDateBR(payment.date)}</p>
+                  <HolidayPaymentNotice date={payment.date} compact />
+                </div>
+                <span className={cn('w-fit rounded-full border px-2 py-0.5 text-[10px] font-bold', CHANNEL_STYLES[payment.channel])}>
+                  {payment.channel}
+                </span>
+                <p className="font-bold">{formatCurrencyBRL(payment.amount)}</p>
+                <StatusDropdown
+                  value={payment.status}
+                  onChange={(status) => updatePaymentStatus(payment.id, status)}
+                />
+                <div className="flex justify-end gap-1">
+                  <Button
+                    render={<Link href={`/clientes/${payment.clientId}`} />}
+                    nativeButton={false}
+                    variant="ghost"
+                    size="icon-sm"
+                    title="Abrir cliente"
+                  >
+                    <Eye className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    title="Apagar programação"
+                    className="text-muted-foreground hover:text-red-300 hover:bg-red-500/10"
+                    onClick={() => deletePayment(payment.id)}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="py-16 text-center">
+            <p className="font-semibold text-muted-foreground">Nenhum Pix para este dia</p>
+            <p className="text-sm text-muted-foreground/70 mt-1">Troque a data ou limpe os filtros para ver outras programações.</p>
+          </div>
+        )}
+      </div>
+      )}
+    </div>
+  );
+}
