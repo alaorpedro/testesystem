@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, XCircle, ExternalLink, X, AlertCircle, ChevronDown, RefreshCw, Building2, Megaphone, Camera } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { GOOGLE_ADS_MANAGERS, useGoogleAds, type GoogleAdsIntegration } from '@/lib/google-ads-store';
 import {
   loadIntegrations,
   readIntegrations,
@@ -485,6 +486,153 @@ function MetaConnectModal({
   );
 }
 
+function GoogleAdsConnectModal({
+  onClose,
+  onConnected,
+}: {
+  onClose: () => void;
+  onConnected: (google: GoogleAdsIntegration) => void;
+}) {
+  const { integration, connect } = useGoogleAds();
+  const [email, setEmail] = useState(integration.email);
+  const [managerId, setManagerId] = useState(integration.managerId || GOOGLE_ADS_MANAGERS[0].id);
+  const [developerToken, setDeveloperToken] = useState(integration.developerToken);
+  const [showGuide, setShowGuide] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const backdropRef = useRef<HTMLDivElement>(null);
+
+  function handleBackdrop(e: React.MouseEvent) {
+    if (e.target === backdropRef.current) onClose();
+  }
+
+  async function handleConnect() {
+    if (!email.trim()) { setError('Informe o Gmail que acessa o Google Ads ou MCC.'); return; }
+    if (!developerToken.trim()) { setError('Informe o developer token do Google Ads API.'); return; }
+    setError('');
+    setLoading(true);
+    try {
+      const saved = await connect({ email, managerId, developerToken });
+      onConnected(saved);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao conectar Google Ads.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div
+      ref={backdropRef}
+      onClick={handleBackdrop}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+    >
+      <div className="w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-border">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-background border border-border flex items-center justify-center">
+              <LogoGoogle />
+            </div>
+            <div>
+              <h2 className="font-bold text-sm">Conectar Google Ads</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">Gmail ou MCC para contas dos clientes</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300 leading-relaxed space-y-1">
+            <p className="font-semibold">Como funciona</p>
+            <p className="text-blue-300/80">Informe o Gmail/MCC com acesso às contas. Depois, em cada cliente, escolha quais contas Google Ads alimentam dashboards e relatórios.</p>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Gmail de acesso</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => { setEmail(e.target.value); setError(''); }}
+              placeholder="exemplo@gmail.com"
+              className="w-full h-10 rounded-lg bg-background border border-border px-3 text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/50 transition"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">MCC / Conta gerente</label>
+            <select
+              value={managerId}
+              onChange={(e) => setManagerId(e.target.value)}
+              className="w-full h-10 rounded-lg bg-background border border-border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/50 transition"
+            >
+              {GOOGLE_ADS_MANAGERS.map((manager) => (
+                <option key={manager.id} value={manager.id}>{manager.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Developer token</label>
+            <input
+              type="password"
+              value={developerToken}
+              onChange={(e) => { setDeveloperToken(e.target.value); setError(''); }}
+              placeholder="Token da Google Ads API"
+              className="w-full h-10 rounded-lg bg-background border border-border px-3 text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/50 transition"
+            />
+          </div>
+
+          <div className="rounded-lg border border-border overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowGuide((v) => !v)}
+              className="w-full flex items-center justify-between px-3 py-2.5 bg-muted/30 text-xs text-muted-foreground font-semibold hover:bg-muted/50 transition-colors"
+            >
+              <span>Checklist da API Google Ads</span>
+              <ChevronDown className={cn('w-4 h-4 transition-transform', showGuide && 'rotate-180')} />
+            </button>
+            {showGuide && (
+              <div className="px-3 py-3 bg-muted/10 text-xs text-muted-foreground leading-relaxed space-y-2">
+                <ol className="list-decimal list-inside space-y-1">
+                  <li>O Gmail precisa ter acesso ao Google Ads ou ao MCC.</li>
+                  <li>O developer token vem da seção API Center da conta gerente.</li>
+                  <li>Para OAuth real, ainda precisamos configurar Client ID, Client Secret e callback no backend.</li>
+                </ol>
+              </div>
+            )}
+          </div>
+
+          {error && (
+            <div className="flex items-center gap-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              {error}
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-1">
+            <Button type="button" variant="outline" className="flex-1 text-xs font-bold uppercase h-10" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleConnect}
+              disabled={loading}
+              className="flex-1 h-10 font-bold text-xs uppercase bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {loading ? (
+                <span className="flex items-center gap-2"><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Salvando...</span>
+              ) : (
+                'Conectar Google Ads'
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type IntegrationId = 'meta-ads' | 'instagram' | 'google-ads' | 'google-my-business' | 'whatsapp' | 'tiktok-ads' | 'website';
@@ -567,7 +715,10 @@ export default function IntegracoesPage() {
   const [integrations, setIntegrations] = useState<Integration[]>(BASE_INTEGRATIONS);
   const [activeCategory, setActiveCategory] = useState('Todos');
   const [metaModal, setMetaModal] = useState(false);
+  const [googleModal, setGoogleModal] = useState(false);
   const [metaInfo, setMetaInfo] = useState<MetaIntegration | null>(null);
+  const [googleDisplayInfo, setGoogleDisplayInfo] = useState<GoogleAdsIntegration | null>(null);
+  const { integration: googleInfo, disconnect: disconnectGoogle } = useGoogleAds();
 
   // Load persisted Meta connection on mount
   useEffect(() => {
@@ -580,6 +731,15 @@ export default function IntegracoesPage() {
       }
     }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (googleInfo.status === 'connected') {
+      setGoogleDisplayInfo(googleInfo);
+      setIntegrations((prev) =>
+        prev.map((i) => (i.id === 'google-ads' ? { ...i, status: 'conectado' } : i))
+      );
+    }
+  }, [googleInfo]);
 
   function handleMetaConnected(meta: MetaIntegration) {
     setMetaInfo(meta);
@@ -603,6 +763,27 @@ export default function IntegracoesPage() {
     }
   }
 
+  function handleGoogleConnected(google: GoogleAdsIntegration) {
+    setGoogleDisplayInfo(google);
+    setGoogleModal(false);
+    setIntegrations((prev) =>
+      prev.map((i) => (i.id === 'google-ads' ? { ...i, status: 'conectado' } : i))
+    );
+  }
+
+  async function handleGoogleDisconnect() {
+    try {
+      await disconnectGoogle();
+      setGoogleDisplayInfo(null);
+      setIntegrations((prev) =>
+        prev.map((i) => (i.id === 'google-ads' ? { ...i, status: 'desconectado' } : i))
+      );
+    } catch (error) {
+      console.error('Erro ao desconectar Google Ads:', error);
+      alert(error instanceof Error ? error.message : 'Erro ao salvar desconexão no Supabase.');
+    }
+  }
+
   function toggleConnection(id: IntegrationId) {
     if (id === 'meta-ads') {
       const current = integrations.find((i) => i.id === 'meta-ads');
@@ -610,6 +791,15 @@ export default function IntegracoesPage() {
         handleMetaDisconnect();
       } else {
         setMetaModal(true);
+      }
+      return;
+    }
+    if (id === 'google-ads') {
+      const current = integrations.find((i) => i.id === 'google-ads');
+      if (current?.status === 'conectado') {
+        handleGoogleDisconnect();
+      } else {
+        setGoogleModal(true);
       }
       return;
     }
@@ -635,6 +825,12 @@ export default function IntegracoesPage() {
         <MetaConnectModal
           onClose={() => setMetaModal(false)}
           onConnected={handleMetaConnected}
+        />
+      )}
+      {googleModal && (
+        <GoogleAdsConnectModal
+          onClose={() => setGoogleModal(false)}
+          onConnected={handleGoogleConnected}
         />
       )}
 
@@ -677,6 +873,7 @@ export default function IntegracoesPage() {
           {filtered.map((integration) => {
             const isConnected = integration.status === 'conectado';
             const isMeta = integration.id === 'meta-ads';
+            const isGoogleAds = integration.id === 'google-ads';
 
             return (
               <div
@@ -735,6 +932,19 @@ export default function IntegracoesPage() {
                             Conectado em {new Date(metaInfo.connectedAt).toLocaleDateString('pt-BR')}
                           </p>
                         )}
+                      </div>
+                    </div>
+                  )}
+                  {isGoogleAds && isConnected && googleDisplayInfo && (
+                    <div className="mt-3 p-2.5 rounded-lg bg-primary/5 border border-primary/15 flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full bg-background border border-border flex items-center justify-center shrink-0">
+                        <LogoGoogle />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-foreground truncate">{googleDisplayInfo.email}</p>
+                        <p className="text-[10px] text-muted-foreground/60">
+                          MCC {googleDisplayInfo.managerId}
+                        </p>
                       </div>
                     </div>
                   )}

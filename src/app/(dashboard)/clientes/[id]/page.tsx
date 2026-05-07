@@ -8,6 +8,7 @@ import {
   type MetaAdsMetrics,
   useMetaAdsConnections,
 } from '@/lib/meta-ads-store';
+import { GOOGLE_ADS_ACCOUNTS, GOOGLE_ADS_MANAGERS, useGoogleAds } from '@/lib/google-ads-store';
 import { loadIntegrations, loadCachedAdAccounts, readIntegrations, type CachedAdAccount } from '@/lib/integration-store';
 import {
   Calendar, Users, BarChart3, TrendingUp, UploadCloud,
@@ -2189,20 +2190,195 @@ function MetaAdsConnectionDialog({
   );
 }
 
+function GoogleAdsConnectionDialog({
+  open,
+  onClose,
+  clientId,
+  clientName,
+}: {
+  open: boolean;
+  onClose: () => void;
+  clientId: string;
+  clientName: string;
+}) {
+  const {
+    integration,
+    getConnection,
+    saveClientConnection,
+    disconnectClient,
+  } = useGoogleAds();
+  const connection = getConnection(clientId);
+  const [managerId, setManagerId] = useState(integration.managerId || GOOGLE_ADS_MANAGERS[0].id);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!open) return;
+    setManagerId(connection?.managerId || integration.managerId || GOOGLE_ADS_MANAGERS[0].id);
+    setSelectedIds(connection?.accountIds ?? []);
+  }, [connection, integration.managerId, open]);
+
+  const globalConnected = integration.status === 'connected';
+  const accounts = GOOGLE_ADS_ACCOUNTS.filter((account) => account.managerId === managerId);
+  const selectedMetrics = GOOGLE_ADS_ACCOUNTS
+    .filter((account) => selectedIds.includes(account.id))
+    .reduce(
+      (total, account) => ({
+        cost: total.cost + account.metrics.cost,
+        impressions: total.impressions + account.metrics.impressions,
+        clicks: total.clicks + account.metrics.clicks,
+        conversions: total.conversions + account.metrics.conversions,
+        cpc: 0,
+      }),
+      { cost: 0, impressions: 0, clicks: 0, conversions: 0, cpc: 0 },
+    );
+  const cpc = selectedMetrics.clicks > 0 ? selectedMetrics.cost / selectedMetrics.clicks : 0;
+
+  function toggle(id: string) {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
+
+  function handleSave() {
+    if (selectedIds.length === 0) return;
+    saveClientConnection(clientId, managerId, selectedIds);
+    onClose();
+  }
+
+  function handleDisconnect() {
+    disconnectClient(clientId);
+    setSelectedIds([]);
+    onClose();
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
+      <DialogContent className="max-w-lg border-border bg-card">
+        <DialogHeader>
+          <DialogTitle className="font-heading text-2xl uppercase tracking-wider">Configurar Google Ads</DialogTitle>
+          <p className="text-sm text-muted-foreground">
+            Selecione as contas Google Ads de <strong>{clientName}</strong>.
+          </p>
+        </DialogHeader>
+
+        <div className="grid gap-4">
+          {!globalConnected ? (
+            <div className="flex items-start gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3">
+              <AlertTriangle className="w-4 h-4 text-yellow-400 mt-0.5 shrink-0" />
+              <div className="text-xs text-yellow-300 leading-relaxed">
+                <p className="font-semibold">Google Ads não conectado globalmente.</p>
+                <p className="text-yellow-300/70 mt-0.5">Vá em <strong>Integrações</strong> e conecte o Google Ads pelo Gmail ou MCC primeiro.</p>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="grid gap-2">
+                <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">MCC / Conta gerente</Label>
+                <select
+                  value={managerId}
+                  onChange={(e) => { setManagerId(e.target.value); setSelectedIds([]); }}
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/40"
+                >
+                  {GOOGLE_ADS_MANAGERS.map((manager) => (
+                    <option key={manager.id} value={manager.id}>{manager.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid gap-2 max-h-72 overflow-y-auto pr-1">
+                {accounts.map((account) => {
+                  const selected = selectedIds.includes(account.id);
+                  return (
+                    <button
+                      key={account.id}
+                      type="button"
+                      onClick={() => toggle(account.id)}
+                      className={cn(
+                        'flex items-center justify-between gap-4 rounded-lg border p-3.5 text-left transition-colors',
+                        selected ? 'border-primary/60 bg-primary/10' : 'border-border bg-background hover:border-primary/30 hover:bg-muted/30',
+                      )}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className={cn(
+                          'flex h-5 w-5 shrink-0 items-center justify-center rounded border',
+                          selected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40',
+                        )}>
+                          {selected && <Check className="h-3 w-3" />}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold truncate">{account.name}</p>
+                          <p className="text-xs font-mono text-muted-foreground mt-0.5">{account.id} - {account.currency}</p>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0 space-y-0.5">
+                        <p className={cn('text-[11px] font-bold', account.status === 'Ativa' ? 'text-emerald-400' : 'text-yellow-400')}>
+                          {account.status}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {account.metrics.conversions} conv.
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="grid gap-2 rounded-lg border border-border bg-background p-3 text-xs text-muted-foreground sm:grid-cols-4">
+                <div><p>Investimento</p><strong className="text-foreground">{formatCurrencyBRL(selectedMetrics.cost)}</strong></div>
+                <div><p>Cliques</p><strong className="text-foreground">{selectedMetrics.clicks.toLocaleString('pt-BR')}</strong></div>
+                <div><p>Conversões</p><strong className="text-primary">{selectedMetrics.conversions.toLocaleString('pt-BR')}</strong></div>
+                <div><p>CPC</p><strong className="text-foreground">{formatCurrencyBRL(cpc)}</strong></div>
+              </div>
+            </>
+          )}
+        </div>
+
+        <DialogFooter className="gap-2 sm:justify-between">
+          <div>
+            {connection && (
+              <Button variant="outline" onClick={handleDisconnect} className="border-red-500/40 text-red-400 hover:bg-red-500/10">
+                Desvincular
+              </Button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose}>Cancelar</Button>
+            <Button
+              onClick={handleSave}
+              disabled={!globalConnected || selectedIds.length === 0}
+              className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+            >
+              Salvar vínculo
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function ClientIntegrationsTab({ clientId, clientName }: { clientId: string; clientName: string }) {
   const { getConnection, getClientAccounts, getClientMetrics } = useMetaAdsConnections();
+  const googleAds = useGoogleAds();
   const [metaDialogOpen, setMetaDialogOpen] = useState(false);
+  const [googleDialogOpen, setGoogleDialogOpen] = useState(false);
   const metaConnection = getConnection(clientId);
   const metaAccounts = getClientAccounts(clientId);
   const metaMetrics = getClientMetrics(clientId);
+  const googleConnection = googleAds.getConnection(clientId);
+  const googleAccounts = googleAds.getClientAccounts(clientId);
+  const googleMetrics = googleAds.getClientMetrics(clientId);
 
   return (
     <>
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 pt-1">
         {integracoes.map((int) => {
           const isMetaAds = int.name === 'Meta Ads';
+          const isGoogleAds = int.name === 'Google Ads';
           const status = isMetaAds
             ? metaConnection ? 'Conectado' : 'Desconectado'
+            : isGoogleAds
+              ? googleConnection ? 'Conectado' : 'Desconectado'
             : int.status;
           const connected = status === 'Conectado';
 
@@ -2242,11 +2418,30 @@ function ClientIntegrationsTab({ clientId, clientName }: { clientId: string; cli
                     </div>
                   </div>
                 )}
+                {isGoogleAds && googleConnection && (
+                  <div className="grid gap-2 rounded-lg border border-border bg-background p-3 text-xs text-muted-foreground">
+                    <div className="flex items-center justify-between gap-3">
+                      <span>Contas vinculadas</span>
+                      <strong className="text-foreground">{googleAccounts.length}</strong>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span>Conversões</span>
+                      <strong className="text-primary">{googleMetrics.conversions.toLocaleString('pt-BR')}</strong>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span>CPC médio</span>
+                      <strong className="text-foreground">{formatCurrencyBRL(googleMetrics.cpc)}</strong>
+                    </div>
+                  </div>
+                )}
                 <Button
                   variant={connected ? 'outline' : 'default'}
                   className="w-full text-xs font-bold uppercase h-9"
-                  onClick={() => isMetaAds && setMetaDialogOpen(true)}
-                  disabled={!isMetaAds}
+                  onClick={() => {
+                    if (isMetaAds) setMetaDialogOpen(true);
+                    if (isGoogleAds) setGoogleDialogOpen(true);
+                  }}
+                  disabled={!isMetaAds && !isGoogleAds}
                 >
                   {connected ? 'Configurar / Desconectar' : 'Conectar Conta'}
                 </Button>
@@ -2259,6 +2454,12 @@ function ClientIntegrationsTab({ clientId, clientName }: { clientId: string; cli
       <MetaAdsConnectionDialog
         open={metaDialogOpen}
         onClose={() => setMetaDialogOpen(false)}
+        clientId={clientId}
+        clientName={clientName}
+      />
+      <GoogleAdsConnectionDialog
+        open={googleDialogOpen}
+        onClose={() => setGoogleDialogOpen(false)}
         clientId={clientId}
         clientName={clientName}
       />
