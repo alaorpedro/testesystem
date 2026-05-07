@@ -1,6 +1,7 @@
--- ON REPORT — Vercel Postgres migration
--- Cole no Vercel → Storage → seu banco → Query → Execute
--- (ou use npx vercel postgres run migration.sql)
+-- ON REPORT — Supabase setup
+-- Cole este arquivo no Supabase → SQL Editor → New query → Run.
+-- Ele cria as tabelas compartilhadas do sistema, insere dados iniciais
+-- e deixa RLS desabilitado para uso interno com a anon key.
 
 -- ─── Users ───────────────────────────────────────────────────────────────────
 
@@ -113,3 +114,14 @@ INSERT INTO clients (id, name, segment, status) VALUES
   ('2', 'OdontoPrime',    'Saúde',      'Ativo'),
   ('3', 'Bella Imóveis',  'Imobiliária','Alerta')
 ON CONFLICT DO NOTHING;
+
+-- ─── RLS: sistema interno compartilhado ────────────────────────────────────
+
+ALTER TABLE users DISABLE ROW LEVEL SECURITY;
+ALTER TABLE user_permissions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE clients DISABLE ROW LEVEL SECURITY;
+ALTER TABLE payments DISABLE ROW LEVEL SECURITY;
+ALTER TABLE meta_integration DISABLE ROW LEVEL SECURITY;
+ALTER TABLE meta_ads_connections DISABLE ROW LEVEL SECURITY;
+ALTER TABLE meta_assets_cache DISABLE ROW LEVEL SECURITY;
+ALTER TABLE activity_logs DISABLE ROW LEVEL SECURITY;
