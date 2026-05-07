@@ -8,7 +8,7 @@ import {
   type MetaAdsMetrics,
   useMetaAdsConnections,
 } from '@/lib/meta-ads-store';
-import { GOOGLE_ADS_ACCOUNTS, GOOGLE_ADS_MANAGERS, useGoogleAds } from '@/lib/google-ads-store';
+import { GOOGLE_ADS_ACCOUNTS, GOOGLE_ADS_MANAGERS, type GoogleAdsMetrics, useGoogleAds } from '@/lib/google-ads-store';
 import { loadIntegrations, loadCachedAdAccounts, readIntegrations, type CachedAdAccount } from '@/lib/integration-store';
 import {
   Calendar, Users, BarChart3, TrendingUp, UploadCloud,
@@ -911,6 +911,55 @@ function buildDashboardDataFromMetaAds(metrics: MetaAdsMetrics): typeof mockDash
   };
 }
 
+function buildDashboardDataFromPaidMedia(meta: MetaAdsMetrics | null, google: GoogleAdsMetrics | null): typeof mockDashboardData {
+  const metaLeads = meta?.leads ?? 0;
+  const googleConversions = google?.conversions ?? 0;
+  const totalResults = metaLeads + googleConversions;
+  const totalSpend = (meta?.spend ?? 0) + (google?.cost ?? 0);
+  const totalImpressions = (meta?.impressions ?? 0) + (google?.impressions ?? 0);
+  const totalClicks = (meta?.clicks ?? 0) + (google?.clicks ?? 0);
+  const blendedCost = totalResults > 0 ? totalSpend / totalResults : 0;
+  const dayWeights = [0.14, 0.11, 0.18, 0.16, 0.2, 0.21];
+  const metaShare = totalResults > 0 ? Math.round((metaLeads / totalResults) * 100) : 0;
+  const googleShare = totalResults > 0 ? 100 - metaShare : 0;
+
+  return {
+    salesTargets: {
+      marketing: {
+        value: Math.round(totalImpressions / 100),
+        max: Math.max(Math.round(totalImpressions / 80), 1),
+        label: 'Impressões Ads',
+        color: 'bg-secondary',
+      },
+      leads: {
+        value: totalResults,
+        max: Math.max(Math.round(totalResults * 1.25), 1),
+        label: 'Resultados Ads',
+        color: 'bg-primary',
+      },
+      reasons: {
+        value: Math.round(blendedCost),
+        max: Math.max(Math.round(blendedCost * 1.4), 1),
+        label: 'Custo por Resultado',
+        color: 'bg-red-500',
+      },
+    },
+    newLeadsData: mockDashboardData.newLeadsData.map((item, index) => ({
+      ...item,
+      facebook: Math.round(metaLeads * dayWeights[index]),
+      instagram: Math.round(googleConversions * dayWeights[index]),
+    })),
+    marketingChannelData: [
+      { name: 'Meta Ads', value: metaShare, fill: '#55F52F' },
+      { name: 'Google Ads', value: googleShare, fill: '#7B2CFF' },
+    ],
+    statsData: mockDashboardData.statsData.map((item, index) => ({
+      ...item,
+      value: Math.max(0, Math.round(totalClicks * dayWeights[index] / 10)),
+    })),
+  };
+}
+
 function buildTodayProgressFromMetaAds(metrics: MetaAdsMetrics): TodayProgress {
   return {
     revenue: 0,
@@ -923,6 +972,26 @@ function buildTodayProgressFromMetaAds(metrics: MetaAdsMetrics): TodayProgress {
       Math.round(metrics.leads * 0.35),
       Math.round(metrics.leads * 0.18),
       Math.round(metrics.leads * 0.08),
+    ],
+  };
+}
+
+function buildTodayProgressFromPaidMedia(meta: MetaAdsMetrics | null, google: GoogleAdsMetrics | null): TodayProgress {
+  const results = (meta?.leads ?? 0) + (google?.conversions ?? 0);
+  const spend = (meta?.spend ?? 0) + (google?.cost ?? 0);
+  const cost = results > 0 ? spend / results : 0;
+
+  return {
+    revenue: 0,
+    enrollments: 0,
+    ticket: 0,
+    cpl: Math.round(cost),
+    funnel: [
+      results,
+      Math.round(results * 0.62),
+      Math.round(results * 0.35),
+      Math.round(results * 0.18),
+      Math.round(results * 0.08),
     ],
   };
 }
@@ -1898,6 +1967,11 @@ function ClientDashboardTab({
   const facebookLeads = dashboardData.newLeadsData.reduce((sum, item) => sum + item.facebook, 0);
   const instagramLeads = dashboardData.newLeadsData.reduce((sum, item) => sum + item.instagram, 0);
   const totalLeads = facebookLeads + instagramLeads;
+  const hasGoogleAdsMix = dashboardData.marketingChannelData.some((channel) => channel.name === 'Google Ads');
+  const primaryLeadLabel = hasGoogleAdsMix ? 'Meta Ads' : 'Facebook';
+  const secondaryLeadLabel = hasGoogleAdsMix ? 'Google Ads' : 'Instagram';
+  const primaryLeadDetail = hasGoogleAdsMix ? 'Resultados vindos do Meta Ads.' : 'Origem Meta/Facebook.';
+  const secondaryLeadDetail = hasGoogleAdsMix ? 'Conversões vindas do Google Ads.' : 'Origem Instagram.';
 
   return (
     <div className="space-y-6">
@@ -1965,15 +2039,15 @@ function ClientDashboardTab({
                     color="#55F52F"
                   />
                   <DataHighlightCard
-                    label="Facebook"
+                    label={primaryLeadLabel}
                     value={facebookLeads.toLocaleString('pt-BR')}
-                    detail="Origem Meta/Facebook."
+                    detail={primaryLeadDetail}
                     color="#55F52F"
                   />
                   <DataHighlightCard
-                    label="Instagram"
+                    label={secondaryLeadLabel}
                     value={instagramLeads.toLocaleString('pt-BR')}
-                    detail="Origem Instagram."
+                    detail={secondaryLeadDetail}
                     color="#7B2CFF"
                   />
                 </div>
@@ -2473,6 +2547,7 @@ export default function ClientPage({ params }: { params: Promise<{ id: string }>
   const { id } = use(params);
   const { allClients } = useClients();
   const { getConnection, connections } = useMetaAdsConnections();
+  const googleAds = useGoogleAds();
   const baseClient = mockClients.find((c) => c.id === id);
   const storedClient = allClients.find((c) => c.id === id);
   const client = storedClient ?? { name: 'Cliente', segment: '', status: 'Ativo' };
@@ -2500,11 +2575,14 @@ export default function ClientPage({ params }: { params: Promise<{ id: string }>
 
   const hasRealData = !!realMetrics;
   const effectiveMetrics: MetaAdsMetrics = realMetrics ?? { spend: 0, impressions: 0, clicks: 0, leads: 0, cpl: 0 };
-  const dashboardData = hasRealData
-    ? buildDashboardDataFromMetaAds(effectiveMetrics)
+  const googleConnection = googleAds.getConnection(id);
+  const googleMetrics = googleConnection ? googleAds.getClientMetrics(id) : null;
+  const hasGoogleData = !!googleConnection && !!googleMetrics && googleConnection.accountIds.length > 0;
+  const dashboardData = hasRealData || hasGoogleData
+    ? buildDashboardDataFromPaidMedia(hasRealData ? effectiveMetrics : null, hasGoogleData ? googleMetrics : null)
     : isNewClient ? ZERO_DASHBOARD_DATA : mockDashboardData;
-  const todayProgress = hasRealData
-    ? buildTodayProgressFromMetaAds(effectiveMetrics)
+  const todayProgress = hasRealData || hasGoogleData
+    ? buildTodayProgressFromPaidMedia(hasRealData ? effectiveMetrics : null, hasGoogleData ? googleMetrics : null)
     : isNewClient ? ZERO_TODAY_PROGRESS : TODAY_PROGRESS;
 
   const [tab, setTab] = useState<Tab>('planejamento');

@@ -23,6 +23,7 @@ export type GoogleAdsAccount = {
   managerName: string;
   currency: string;
   status: 'Ativa' | 'Pausada';
+  balance: number;
   metrics: GoogleAdsMetrics;
 };
 
@@ -58,6 +59,7 @@ export const GOOGLE_ADS_ACCOUNTS: GoogleAdsAccount[] = [
     managerName: 'MCC Onmid',
     currency: 'BRL',
     status: 'Ativa',
+    balance: 68.4,
     metrics: { cost: 4120.45, impressions: 74320, clicks: 3820, conversions: 128, cpc: 1.08 },
   },
   {
@@ -67,6 +69,7 @@ export const GOOGLE_ADS_ACCOUNTS: GoogleAdsAccount[] = [
     managerName: 'MCC Onmid',
     currency: 'BRL',
     status: 'Ativa',
+    balance: 312.9,
     metrics: { cost: 2890.2, impressions: 58240, clicks: 2190, conversions: 82, cpc: 1.32 },
   },
   {
@@ -76,6 +79,7 @@ export const GOOGLE_ADS_ACCOUNTS: GoogleAdsAccount[] = [
     managerName: 'MCC Comercial',
     currency: 'BRL',
     status: 'Ativa',
+    balance: 84.15,
     metrics: { cost: 2380.8, impressions: 39100, clicks: 1540, conversions: 56, cpc: 1.55 },
   },
   {
@@ -85,6 +89,7 @@ export const GOOGLE_ADS_ACCOUNTS: GoogleAdsAccount[] = [
     managerName: 'MCC Comercial',
     currency: 'BRL',
     status: 'Pausada',
+    balance: 0,
     metrics: { cost: 980.15, impressions: 18340, clicks: 610, conversions: 21, cpc: 1.61 },
   },
 ];

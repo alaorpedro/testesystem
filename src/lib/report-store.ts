@@ -110,6 +110,13 @@ export function downloadReportPdf(report: StoredReport) {
     h1 { margin: 0 0 8px; font-size: 28px; }
     .meta { color: #6b7280; font-size: 13px; margin-bottom: 24px; }
     .summary { border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin-bottom: 24px; }
+    .widget-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 16px 0 28px; }
+    .widget { position: relative; overflow: hidden; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; background: #fff; }
+    .widget-bar { position: absolute; top: 0; left: 0; right: 0; height: 4px; }
+    .widget-source { margin: 0 0 6px; color: #6b7280; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+    .widget h3 { margin: 0; font-size: 14px; }
+    .widget strong { display: block; margin-top: 10px; font-size: 24px; }
+    .widget p:last-child { margin: 6px 0 0; color: #6b7280; font-size: 12px; }
     table { width: 100%; border-collapse: collapse; margin: 16px 0; }
     th, td { border: 1px solid #e5e7eb; padding: 10px; text-align: left; }
     th { background: #f3f4f6; }

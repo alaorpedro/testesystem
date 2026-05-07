@@ -299,6 +299,86 @@ function MetaAssetsPanel({ meta }: { meta: MetaIntegration }) {
   );
 }
 
+// ─── Google Ads Assets Panel ──────────────────────────────────────────────────
+
+function GoogleAdsAssetsPanel({ google }: { google: GoogleAdsIntegration }) {
+  const { accounts } = useGoogleAds();
+  const managerName = GOOGLE_ADS_MANAGERS.find((manager) => manager.id === google.managerId)?.name ?? google.managerId;
+
+  return (
+    <div className="bg-card border border-border rounded-xl overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+        <div>
+          <p className="text-sm font-bold">Ativos acessíveis Google Ads</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Conta: {google.email} · {managerName}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-bold text-primary">
+          <Megaphone className="w-3.5 h-3.5" />
+          {accounts.length} conta{accounts.length === 1 ? '' : 's'}
+        </div>
+      </div>
+
+      <div className="p-5">
+        {accounts.length === 0 ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">Nenhuma conta Google Ads encontrada.</p>
+        ) : (
+          <div className="divide-y divide-border">
+            {accounts.map((account) => {
+              const balanceLow = account.balance < 100;
+
+              return (
+                <div key={account.id} className="grid gap-3 py-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold truncate">{account.name}</p>
+                      <span className={cn(
+                        'rounded-full px-2 py-0.5 text-[10px] font-bold',
+                        account.status === 'Ativa'
+                          ? 'bg-primary/15 text-primary'
+                          : 'bg-muted text-muted-foreground',
+                      )}>
+                        {account.status}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-xs font-mono text-muted-foreground truncate">
+                      {account.id} · {account.currency} · {account.managerName}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:min-w-[460px]">
+                    <div className="rounded-lg bg-muted/30 px-3 py-2">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Saldo</p>
+                      <p className={cn('mt-1 text-sm font-bold tabular-nums', balanceLow ? 'text-red-400' : 'text-primary')}>
+                        {account.balance.toLocaleString('pt-BR', { style: 'currency', currency: account.currency })}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-muted/30 px-3 py-2">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Investido</p>
+                      <p className="mt-1 text-sm font-bold tabular-nums">
+                        {account.metrics.cost.toLocaleString('pt-BR', { style: 'currency', currency: account.currency })}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-muted/30 px-3 py-2">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Cliques</p>
+                      <p className="mt-1 text-sm font-bold tabular-nums">{account.metrics.clicks.toLocaleString('pt-BR')}</p>
+                    </div>
+                    <div className="rounded-lg bg-muted/30 px-3 py-2">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Conversões</p>
+                      <p className="mt-1 text-sm font-bold tabular-nums">{account.metrics.conversions.toLocaleString('pt-BR')}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Logos ────────────────────────────────────────────────────────────────────
 
 const LogoMeta = () => (
@@ -927,6 +1007,10 @@ export default function IntegracoesPage() {
         {/* Meta Assets Panel — shown when connected */}
         {metaInfo && metaInfo.status === 'connected' && (
           <MetaAssetsPanel meta={metaInfo} />
+        )}
+
+        {googleDisplayInfo && googleDisplayInfo.status === 'connected' && (
+          <GoogleAdsAssetsPanel google={googleDisplayInfo} />
         )}
       </div>
     </>
