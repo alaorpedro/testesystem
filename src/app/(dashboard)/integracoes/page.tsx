@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from 'react';
-import { CheckCircle2, XCircle, ExternalLink, X, AlertCircle, ChevronDown, RefreshCw, Building2, Megaphone, Camera } from 'lucide-react';
+import { CheckCircle2, XCircle, ExternalLink, X, AlertCircle, ChevronDown, RefreshCw, Building2, Megaphone, Camera, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
   GOOGLE_ADS_DEFAULT_MANAGER_ID,
   GOOGLE_ADS_DEVELOPER_TOKEN,
   GOOGLE_ADS_LOGIN_EMAIL,
+  type GoogleAdsAccount,
   GOOGLE_ADS_MANAGERS,
   useGoogleAds,
   type GoogleAdsIntegration,
@@ -301,77 +302,160 @@ function MetaAssetsPanel({ meta }: { meta: MetaIntegration }) {
 
 // ─── Google Ads Assets Panel ──────────────────────────────────────────────────
 
+type AccountFormState = { id: string; name: string; managerId: string; managerName: string; currency: string; status: 'Ativa' | 'Pausada'; balance: number };
+const EMPTY_ACCOUNT_FORM: AccountFormState = { id: '', name: '', managerId: 'mcc-8493021188', managerName: 'MCC Onmid', currency: 'BRL', status: 'Ativa', balance: 0 };
+
 function GoogleAdsAssetsPanel({ google }: { google: GoogleAdsIntegration }) {
-  const { accounts } = useGoogleAds();
-  const managerName = GOOGLE_ADS_MANAGERS.find((manager) => manager.id === google.managerId)?.name ?? google.managerId;
+  const { accounts, saveAccount, deleteAccount } = useGoogleAds();
+  const managerName = GOOGLE_ADS_MANAGERS.find((m) => m.id === google.managerId)?.name ?? google.managerId;
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState<AccountFormState>(EMPTY_ACCOUNT_FORM);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+
+  async function handleAdd() {
+    if (!form.id.trim() || !form.name.trim()) return;
+    setSaving(true);
+    setSaveError('');
+    try {
+      await saveAccount({ ...form, managerId: form.managerId, managerName: GOOGLE_ADS_MANAGERS.find((m) => m.id === form.managerId)?.name ?? form.managerId });
+      setForm(EMPTY_ACCOUNT_FORM);
+      setShowForm(false);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Erro ao salvar');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(account: GoogleAdsAccount) {
+    if (!window.confirm(`Remover a conta "${account.name}"?`)) return;
+    await deleteAccount(account.id);
+  }
 
   return (
     <div className="bg-card border border-border rounded-xl overflow-hidden">
       <div className="flex items-center justify-between px-5 py-4 border-b border-border">
         <div>
-          <p className="text-sm font-bold">Ativos acessíveis Google Ads</p>
+          <p className="text-sm font-bold">Contas Google Ads</p>
           <p className="text-xs text-muted-foreground mt-0.5">
             Conta: {google.email} · {managerName}
           </p>
         </div>
-        <div className="flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-bold text-primary">
-          <Megaphone className="w-3.5 h-3.5" />
-          {accounts.length} conta{accounts.length === 1 ? '' : 's'}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-bold text-primary">
+            <Megaphone className="w-3.5 h-3.5" />
+            {accounts.length} conta{accounts.length === 1 ? '' : 's'}
+          </div>
+          <Button size="sm" onClick={() => { setShowForm((v) => !v); setSaveError(''); }} className="bg-primary text-primary-foreground hover:bg-primary/90 h-8 gap-1.5 text-xs">
+            <Plus className="w-3.5 h-3.5" />
+            Adicionar
+          </Button>
         </div>
       </div>
 
+      {showForm && (
+        <div className="border-b border-border bg-muted/20 p-5 space-y-3">
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Nova conta Google Ads</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">ID da conta</label>
+              <input
+                placeholder="ex: 123-456-7890"
+                value={form.id}
+                onChange={(e) => setForm((f) => ({ ...f, id: e.target.value }))}
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Nome da conta</label>
+              <input
+                placeholder="ex: Cliente XYZ - Search"
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">MCC / Gerenciadora</label>
+              <select
+                value={form.managerId}
+                onChange={(e) => setForm((f) => ({ ...f, managerId: e.target.value }))}
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                {GOOGLE_ADS_MANAGERS.map((m) => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Moeda</label>
+                <select
+                  value={form.currency}
+                  onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="BRL">BRL</option>
+                  <option value="USD">USD</option>
+                  <option value="EUR">EUR</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Status</label>
+                <select
+                  value={form.status}
+                  onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as 'Ativa' | 'Pausada' }))}
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="Ativa">Ativa</option>
+                  <option value="Pausada">Pausada</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          {saveError && <p className="text-xs text-red-400">{saveError}</p>}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => { setShowForm(false); setForm(EMPTY_ACCOUNT_FORM); }}>Cancelar</Button>
+            <Button size="sm" onClick={handleAdd} disabled={saving || !form.id.trim() || !form.name.trim()} className="bg-primary text-primary-foreground hover:bg-primary/90">
+              {saving ? 'Salvando...' : 'Salvar conta'}
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="p-5">
         {accounts.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">Nenhuma conta Google Ads encontrada.</p>
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            Nenhuma conta adicionada. Use o botão &quot;Adicionar&quot; para cadastrar suas contas Google Ads.
+          </p>
         ) : (
           <div className="divide-y divide-border">
-            {accounts.map((account) => {
-              const balanceLow = account.balance < 100;
-
-              return (
-                <div key={account.id} className="grid gap-3 py-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold truncate">{account.name}</p>
-                      <span className={cn(
-                        'rounded-full px-2 py-0.5 text-[10px] font-bold',
-                        account.status === 'Ativa'
-                          ? 'bg-primary/15 text-primary'
-                          : 'bg-muted text-muted-foreground',
-                      )}>
-                        {account.status}
-                      </span>
-                    </div>
-                    <p className="mt-0.5 text-xs font-mono text-muted-foreground truncate">
-                      {account.id} · {account.currency} · {account.managerName}
-                    </p>
+            {accounts.map((account) => (
+              <div key={account.id} className="flex items-center gap-3 py-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-semibold truncate">{account.name}</p>
+                    <span className={cn(
+                      'rounded-full px-2 py-0.5 text-[10px] font-bold shrink-0',
+                      account.status === 'Ativa' ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
+                    )}>
+                      {account.status}
+                    </span>
                   </div>
-
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:min-w-[460px]">
-                    <div className="rounded-lg bg-muted/30 px-3 py-2">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Saldo</p>
-                      <p className={cn('mt-1 text-sm font-bold tabular-nums', balanceLow ? 'text-red-400' : 'text-primary')}>
-                        {account.balance.toLocaleString('pt-BR', { style: 'currency', currency: account.currency })}
-                      </p>
-                    </div>
-                    <div className="rounded-lg bg-muted/30 px-3 py-2">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Investido</p>
-                      <p className="mt-1 text-sm font-bold tabular-nums">
-                        {account.metrics.cost.toLocaleString('pt-BR', { style: 'currency', currency: account.currency })}
-                      </p>
-                    </div>
-                    <div className="rounded-lg bg-muted/30 px-3 py-2">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Cliques</p>
-                      <p className="mt-1 text-sm font-bold tabular-nums">{account.metrics.clicks.toLocaleString('pt-BR')}</p>
-                    </div>
-                    <div className="rounded-lg bg-muted/30 px-3 py-2">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Conversões</p>
-                      <p className="mt-1 text-sm font-bold tabular-nums">{account.metrics.conversions.toLocaleString('pt-BR')}</p>
-                    </div>
-                  </div>
+                  <p className="mt-0.5 text-xs font-mono text-muted-foreground truncate">
+                    {account.id} · {account.currency} · {account.managerName}
+                  </p>
                 </div>
-              );
-            })}
+                <button
+                  onClick={() => handleDelete(account)}
+                  className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-red-500/10 hover:text-red-400 transition-colors"
+                  title="Remover conta"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
           </div>
         )}
       </div>

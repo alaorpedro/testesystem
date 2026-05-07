@@ -19,7 +19,6 @@ import { Sparkles, AlertTriangle, Users, RefreshCw, Check, BarChart3 } from 'luc
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type Period = 'last_7d' | 'last_30d' | 'last_month' | 'this_month' | 'custom';
-type ReportPlatform = 'meta' | 'google';
 type ReportSource = 'meta' | 'google' | 'gmb' | 'sheets';
 type ReportWidgetType = 'kpi' | 'bar' | 'line' | 'table';
 
@@ -841,7 +840,6 @@ export default function NovoRelatorioPage() {
   const metaAds = useMetaAdsConnections();
   const googleAds = useGoogleAds();
 
-  const [platform, setPlatform] = useState<ReportPlatform>('meta');
   const [selectedSources, setSelectedSources] = useState<ReportSource[]>(['meta', 'google']);
   const [source, setSource] = useState<'account' | 'client'>('account');
   const [selectedClientId, setSelectedClientId] = useState('');
@@ -884,11 +882,6 @@ export default function NovoRelatorioPage() {
       ? clientLinkedGoogleAccounts
       : googleAds.accounts.filter(a => selectedAccountIds.includes(a.id));
 
-  const accountsForCurrentPlatform = platform === 'meta' ? metaAccountsForReport : googleAccountsForReport;
-  const isPlatformConnected = platform === 'meta'
-    ? isMetaConnected
-    : googleAds.integration.status === 'connected';
-  const platformName = platform === 'meta' ? 'Meta Ads' : 'Google Ads';
   const availableMetrics = REPORT_METRICS.filter((metric) => selectedSources.includes(metric.source));
   const selectedWidgetMetricKeys = new Set(reportWidgets.map((widget) => widget.metricKey));
   const widgetsForSelectedSources = reportWidgets.filter((widget) => selectedSources.includes(widget.source));
@@ -899,13 +892,6 @@ export default function NovoRelatorioPage() {
       prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id],
     );
     setHasGeneratedPreview(false);
-  }
-
-  function selectPlatform(nextPlatform: ReportPlatform) {
-    setPlatform(nextPlatform);
-    setReports([]);
-    setHasGeneratedPreview(false);
-    setGenerateError('');
   }
 
   function toggleSource(sourceKey: ReportSource) {
@@ -1004,13 +990,6 @@ export default function NovoRelatorioPage() {
         <p className="text-muted-foreground mt-1">Escolha fontes e widgets para montar relatórios personalizados.</p>
       </div>
 
-      {selectedSources.includes(platform) && !isPlatformConnected && (
-        <div className="flex items-center gap-3 p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-600 dark:text-yellow-400">
-          <AlertTriangle className="w-5 h-5 shrink-0" />
-          <p className="text-sm">{platformName} não conectado. <Link href="/integracoes" className="underline font-medium">Conecte na página de Integrações</Link>.</p>
-        </div>
-      )}
-
       <div className="grid gap-6">
         {/* Section 1: Source */}
         <Card>
@@ -1051,19 +1030,6 @@ export default function NovoRelatorioPage() {
               </div>
             </div>
 
-            <div className="grid sm:grid-cols-2 gap-3">
-              {[
-                { key: 'meta' as const, title: 'Meta Ads', desc: 'Facebook e Instagram via conta Meta' },
-                { key: 'google' as const, title: 'Google Ads', desc: 'Contas vinculadas pelo Gmail/MCC' },
-              ].map(opt => (
-                <button key={opt.key} onClick={() => selectPlatform(opt.key)}
-                  className={`p-4 rounded-lg border-2 transition-all text-left ${platform === opt.key ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'}`}>
-                  <p className="font-semibold text-sm">{opt.title}</p>
-                  <p className="text-xs text-muted-foreground">{opt.desc}</p>
-                </button>
-              ))}
-            </div>
-
             <div className="flex gap-3">
               {[
                 { key: 'account', icon: <BarChart3 className="w-5 h-5 text-primary shrink-0" />, title: 'Contas de Anúncios', desc: 'Qualquer conta da conexão global' },
@@ -1078,32 +1044,78 @@ export default function NovoRelatorioPage() {
             </div>
 
             {source === 'account' && (
-              <div className="space-y-2">
-                {platform === 'meta' && cachedAccounts.length === 0 ? (
-                  <p className="text-sm text-muted-foreground p-4 rounded-lg bg-muted/30 text-center">
-                    {isMetaConnected ? 'Nenhuma conta. Acesse Integrações e carregue os ativos.' : 'Conecte o Meta Ads.'}
-                  </p>
-                ) : (
-                  <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                    {(platform === 'meta' ? cachedAccounts : googleAds.accounts).map(account => {
-                      const sel = selectedAccountIds.includes(account.id);
-                      return (
-                        <button key={account.id} onClick={() => toggleAccount(account.id)}
-                          className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-all text-left ${sel ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'}`}>
-                          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${sel ? 'bg-primary border-primary' : 'border-muted-foreground'}`}>
-                            {sel && <Check className="w-3 h-3 text-white" />}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-sm truncate">{account.name}</p>
-                            <p className="text-xs text-muted-foreground font-mono">{account.id}</p>
-                          </div>
-                          <span className="text-xs text-muted-foreground shrink-0">{account.currency}</span>
-                        </button>
-                      );
-                    })}
+              <div className="space-y-4">
+                {selectedSources.includes('meta') && (
+                  <div className="space-y-2">
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Meta Ads</p>
+                    {!isMetaConnected ? (
+                      <p className="text-sm text-muted-foreground p-3 rounded-lg bg-muted/30 text-center">
+                        Não conectado. <Link href="/integracoes" className="underline font-medium text-primary">Conectar →</Link>
+                      </p>
+                    ) : cachedAccounts.length === 0 ? (
+                      <p className="text-sm text-muted-foreground p-3 rounded-lg bg-muted/30 text-center">
+                        Nenhuma conta. <Link href="/integracoes" className="underline font-medium text-primary">Carregar ativos →</Link>
+                      </p>
+                    ) : (
+                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                        {cachedAccounts.map(account => {
+                          const sel = selectedAccountIds.includes(account.id);
+                          return (
+                            <button key={account.id} onClick={() => toggleAccount(account.id)}
+                              className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-all text-left ${sel ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'}`}>
+                              <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${sel ? 'bg-primary border-primary' : 'border-muted-foreground'}`}>
+                                {sel && <Check className="w-3 h-3 text-white" />}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-sm truncate">{account.name}</p>
+                                <p className="text-xs text-muted-foreground font-mono">{account.id}</p>
+                              </div>
+                              <span className="text-xs text-muted-foreground shrink-0">{account.currency}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
-                {selectedAccountIds.length > 0 && <p className="text-xs text-muted-foreground">{selectedAccountIds.length} conta(s) selecionada(s)</p>}
+
+                {selectedSources.includes('google') && (
+                  <div className="space-y-2">
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Google Ads</p>
+                    {googleAds.integration.status !== 'connected' ? (
+                      <p className="text-sm text-muted-foreground p-3 rounded-lg bg-muted/30 text-center">
+                        Não conectado. <Link href="/integracoes" className="underline font-medium text-primary">Conectar →</Link>
+                      </p>
+                    ) : googleAds.accounts.length === 0 ? (
+                      <p className="text-sm text-muted-foreground p-3 rounded-lg bg-muted/30 text-center">
+                        Nenhuma conta. <Link href="/integracoes" className="underline font-medium text-primary">Adicionar contas →</Link>
+                      </p>
+                    ) : (
+                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                        {googleAds.accounts.map(account => {
+                          const sel = selectedAccountIds.includes(account.id);
+                          return (
+                            <button key={account.id} onClick={() => toggleAccount(account.id)}
+                              className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-all text-left ${sel ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'}`}>
+                              <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${sel ? 'bg-primary border-primary' : 'border-muted-foreground'}`}>
+                                {sel && <Check className="w-3 h-3 text-white" />}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-sm truncate">{account.name}</p>
+                                <p className="text-xs text-muted-foreground font-mono">{account.id}</p>
+                              </div>
+                              <span className="text-xs text-muted-foreground shrink-0">{account.currency}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {selectedAccountIds.length > 0 && (
+                  <p className="text-xs text-muted-foreground">{selectedAccountIds.length} conta(s) selecionada(s)</p>
+                )}
               </div>
             )}
 
@@ -1117,22 +1129,42 @@ export default function NovoRelatorioPage() {
                     {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>
-                {selectedClientId && (accountsForCurrentPlatform.length === 0 ? (
-                  <p className="text-sm text-muted-foreground p-3 rounded-lg bg-muted/30">
-                    Sem contas de {platformName} vinculadas. <Link href={`/clientes/${selectedClientId}`} className="text-primary underline">Configurar →</Link>
-                  </p>
-                ) : (
-                  <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">Contas vinculadas:</p>
-                    {accountsForCurrentPlatform.map(a => (
-                      <div key={a.id} className="flex items-center gap-2 p-2 rounded-md bg-muted/30 text-sm">
-                        <Check className="w-4 h-4 text-primary shrink-0" />
-                        <span className="font-medium flex-1">{a.name}</span>
-                        <span className="text-xs text-muted-foreground font-mono">{a.id}</span>
+                {selectedClientId && (
+                  <div className="space-y-3">
+                    {selectedSources.includes('meta') && (
+                      <div className="space-y-1">
+                        <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Meta Ads</p>
+                        {clientLinkedMetaAccounts.length === 0 ? (
+                          <p className="text-sm text-muted-foreground p-3 rounded-lg bg-muted/30">
+                            Sem contas Meta vinculadas. <Link href={`/clientes/${selectedClientId}`} className="text-primary underline">Configurar →</Link>
+                          </p>
+                        ) : clientLinkedMetaAccounts.map(a => (
+                          <div key={a.id} className="flex items-center gap-2 p-2 rounded-md bg-muted/30 text-sm">
+                            <Check className="w-4 h-4 text-primary shrink-0" />
+                            <span className="font-medium flex-1">{a.name}</span>
+                            <span className="text-xs text-muted-foreground font-mono">{a.id}</span>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
+                    {selectedSources.includes('google') && (
+                      <div className="space-y-1">
+                        <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Google Ads</p>
+                        {clientLinkedGoogleAccounts.length === 0 ? (
+                          <p className="text-sm text-muted-foreground p-3 rounded-lg bg-muted/30">
+                            Sem contas Google vinculadas. <Link href={`/clientes/${selectedClientId}`} className="text-primary underline">Configurar →</Link>
+                          </p>
+                        ) : clientLinkedGoogleAccounts.map(a => (
+                          <div key={a.id} className="flex items-center gap-2 p-2 rounded-md bg-muted/30 text-sm">
+                            <Check className="w-4 h-4 text-primary shrink-0" />
+                            <span className="font-medium flex-1">{a.name}</span>
+                            <span className="text-xs text-muted-foreground font-mono">{a.id}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                ))}
+                )}
               </div>
             )}
           </CardContent>
