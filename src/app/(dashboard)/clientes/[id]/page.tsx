@@ -66,6 +66,57 @@ function fmtBRL(v: number): string {
   return formatCurrencyBRL(v);
 }
 
+// ── Meta real-time insights ─────────────────────────────────────────────────
+type MetaInsightsPeriod = 'last_7d' | 'last_30d' | 'last_month' | 'this_month';
+const PERIOD_LABELS_CLIENT: Record<MetaInsightsPeriod, string> = {
+  last_7d: 'Últimos 7 dias',
+  last_30d: 'Últimos 30 dias',
+  last_month: 'Mês passado',
+  this_month: 'Este mês',
+};
+
+type MetaInsightAction = { action_type: string; value: string };
+const LEAD_ACTION_TYPES = [
+  'lead',
+  'offsite_conversion.fb_pixel_lead',
+  'onsite_conversion.lead_grouped',
+  'onsite_conversion.messaging_conversation_started_7d',
+  'onsite_conversion.total_messaging_connection',
+];
+
+async function fetchClientMetaMetrics(
+  accountIds: string[],
+  token: string,
+  period: MetaInsightsPeriod,
+): Promise<MetaAdsMetrics> {
+  const fields = 'spend,impressions,clicks,actions';
+  const results = await Promise.all(
+    accountIds.map(async (accountId) => {
+      const url = `https://graph.facebook.com/v21.0/${accountId}/insights?fields=${fields}&level=account&date_preset=${period}&access_token=${token}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message);
+      const row = data.data?.[0] ?? {};
+      const leads = ((row.actions as MetaInsightAction[]) ?? [])
+        .filter(a => LEAD_ACTION_TYPES.includes(a.action_type))
+        .reduce((sum, a) => sum + parseInt(a.value || '0', 10), 0);
+      return {
+        spend: parseFloat(row.spend || '0'),
+        impressions: parseInt(row.impressions || '0', 10),
+        clicks: parseInt(row.clicks || '0', 10),
+        leads,
+        cpl: 0,
+      };
+    }),
+  );
+  const agg = results.reduce(
+    (acc, m) => ({ spend: acc.spend + m.spend, impressions: acc.impressions + m.impressions, clicks: acc.clicks + m.clicks, leads: acc.leads + m.leads, cpl: 0 }),
+    { spend: 0, impressions: 0, clicks: 0, leads: 0, cpl: 0 },
+  );
+  agg.cpl = agg.leads > 0 ? agg.spend / agg.leads : 0;
+  return agg;
+}
+
 function CurrencyInput({ value, onChange, className }: {
   value: number;
   onChange: (value: number) => void;
@@ -2221,19 +2272,42 @@ type Tab = typeof TABS[number];
 export default function ClientPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { allClients } = useClients();
-  const { getConnection, getClientMetrics } = useMetaAdsConnections();
+  const { getConnection, connections } = useMetaAdsConnections();
   const baseClient = mockClients.find((c) => c.id === id);
   const storedClient = allClients.find((c) => c.id === id);
   const client = storedClient ?? { name: 'Cliente', segment: '', status: 'Ativo' };
   const isNewClient = !baseClient || !storedClient;
   const metaConnection = getConnection(id);
-  const metaMetrics = getClientMetrics(id);
-  const dashboardData = metaConnection
-    ? buildDashboardDataFromMetaAds(metaMetrics)
+
+  const [period, setPeriod] = useState<MetaInsightsPeriod>('last_30d');
+  const [periodMenuOpen, setPeriodMenuOpen] = useState(false);
+  const [realMetrics, setRealMetrics] = useState<MetaAdsMetrics | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState(false);
+
+  useEffect(() => {
+    const connection = getConnection(id);
+    const integrations = readIntegrations();
+    if (!connection || integrations.meta.status !== 'connected' || connection.accountIds.length === 0) {
+      setRealMetrics(null);
+      return;
+    }
+    setMetricsLoading(true);
+    fetchClientMetaMetrics(connection.accountIds, integrations.meta.accessToken, period)
+      .then(m => setRealMetrics(m))
+      .catch(() => setRealMetrics(null))
+      .finally(() => setMetricsLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, period, connections]);
+
+  const hasRealData = !!realMetrics;
+  const effectiveMetrics: MetaAdsMetrics = realMetrics ?? { spend: 0, impressions: 0, clicks: 0, leads: 0, cpl: 0 };
+  const dashboardData = hasRealData
+    ? buildDashboardDataFromMetaAds(effectiveMetrics)
     : isNewClient ? ZERO_DASHBOARD_DATA : mockDashboardData;
-  const todayProgress = metaConnection
-    ? buildTodayProgressFromMetaAds(metaMetrics)
+  const todayProgress = hasRealData
+    ? buildTodayProgressFromMetaAds(effectiveMetrics)
     : isNewClient ? ZERO_TODAY_PROGRESS : TODAY_PROGRESS;
+
   const [tab, setTab] = useState<Tab>('planejamento');
   const [clientGoal, setClientGoal] = useState<ClientGoalConfig>(() => isNewClient ? ZERO_CLIENT_GOAL : DEFAULT_CLIENT_GOAL);
   const [dashboardEditMode, setDashboardEditMode] = useState(false);
@@ -2270,10 +2344,33 @@ export default function ClientPage({ params }: { params: Promise<{ id: string }>
           <p className="text-sm text-muted-foreground mt-1 uppercase tracking-wide">{client.segment}</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" className="border-border h-9 text-xs font-bold uppercase tracking-wider">
-            <Calendar className="w-4 h-4 mr-2 text-primary" />
-            Últimos 30 dias
-          </Button>
+          <div className="relative">
+            <Button
+              variant="outline"
+              className="border-border h-9 text-xs font-bold uppercase tracking-wider gap-2"
+              onClick={() => setPeriodMenuOpen(prev => !prev)}
+            >
+              <Calendar className="w-4 h-4 text-primary" />
+              {metricsLoading ? 'Carregando...' : PERIOD_LABELS_CLIENT[period]}
+              <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
+            </Button>
+            {periodMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border rounded-lg shadow-lg p-1 min-w-[160px]">
+                {(Object.entries(PERIOD_LABELS_CLIENT) as [MetaInsightsPeriod, string][]).map(([value, label]) => (
+                  <button
+                    key={value}
+                    onClick={() => { setPeriod(value); setPeriodMenuOpen(false); }}
+                    className={cn(
+                      'w-full text-left px-3 py-2 rounded-md text-xs font-medium transition-colors',
+                      period === value ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-foreground',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <Button className="bg-primary text-primary-foreground hover:bg-primary/90 h-9 text-xs font-bold uppercase tracking-wider">
             Exportar PDF
           </Button>

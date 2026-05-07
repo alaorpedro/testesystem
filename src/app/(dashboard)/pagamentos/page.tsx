@@ -1,7 +1,7 @@
 "use client";
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   AlertTriangle,
   CalendarDays,
@@ -24,8 +24,155 @@ import {
   PAYMENT_STATUS_OPTIONS,
   useInvestmentPayments,
 } from '@/lib/payment-store';
+import { readIntegrations, readCachedAdAccounts, type CachedAdAccount } from '@/lib/integration-store';
 import { getHoliday, previousBusinessDay, formatDateBR as formatHolidayDateBR } from '@/lib/holidays';
 import { cn, formatCurrencyBRL, formatCurrencyInputBRL, parseCurrencyBRL } from '@/lib/utils';
+
+// ── Meta account balance ──────────────────────────────────────────────────────
+type AdAccountBalance = {
+  id: string;
+  name: string;
+  currency: string;
+  balance: number | null;
+  error: string | null;
+};
+
+async function fetchAdAccountBalances(accounts: CachedAdAccount[], token: string): Promise<AdAccountBalance[]> {
+  return Promise.all(
+    accounts.map(async (account) => {
+      try {
+        const res = await fetch(
+          `https://graph.facebook.com/v21.0/${account.id}?fields=balance,currency,name&access_token=${token}`,
+        );
+        const data = await res.json();
+        if (data.error) return { id: account.id, name: account.name, currency: account.currency, balance: null, error: data.error.message };
+        // Meta returns balance as integer in the currency's smallest unit (cents)
+        const balance = parseInt(data.balance || '0', 10) / 100;
+        return { id: account.id, name: account.name, currency: data.currency || account.currency, balance, error: null };
+      } catch (e) {
+        return { id: account.id, name: account.name, currency: account.currency, balance: null, error: String(e) };
+      }
+    }),
+  );
+}
+
+const LOW_BALANCE_THRESHOLD = 100; // R$100
+
+function AdAccountBalances() {
+  const [balances, setBalances] = useState<AdAccountBalance[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [isMetaConnected, setIsMetaConnected] = useState(false);
+
+  const load = useCallback(async () => {
+    const integrations = readIntegrations();
+    if (integrations.meta.status !== 'connected') {
+      setIsMetaConnected(false);
+      return;
+    }
+    setIsMetaConnected(true);
+    const accounts = readCachedAdAccounts();
+    if (accounts.length === 0) return;
+    setLoading(true);
+    try {
+      const result = await fetchAdAccountBalances(accounts, integrations.meta.accessToken);
+      setBalances(result);
+      setLastUpdated(new Date());
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (!isMetaConnected) return null;
+  if (balances.length === 0 && !loading) return null;
+
+  const urgentCount = balances.filter(b => b.balance !== null && b.balance < LOW_BALANCE_THRESHOLD).length;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <h2 className="font-bold text-sm uppercase tracking-wider">Saldo das Contas de Anúncios</h2>
+          {urgentCount > 0 && (
+            <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-red-400 bg-red-500/10 border border-red-500/30 px-2 py-0.5 rounded-full">
+              <AlertTriangle className="w-3 h-3" />
+              {urgentCount} conta{urgentCount > 1 ? 's' : ''} com saldo crítico
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {lastUpdated && (
+            <span className="text-[10px] text-muted-foreground">Atualizado às {lastUpdated.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+          )}
+          <button
+            onClick={load}
+            disabled={loading}
+            className="text-[10px] font-bold uppercase tracking-wider text-primary hover:text-primary/80 disabled:opacity-50 flex items-center gap-1"
+          >
+            <Eye className="w-3 h-3" />
+            {loading ? 'Atualizando...' : 'Atualizar'}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+        {loading && balances.length === 0 ? (
+          Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="bg-card border border-border rounded-xl p-4 animate-pulse">
+              <div className="h-3 bg-muted rounded w-3/4 mb-3" />
+              <div className="h-7 bg-muted rounded w-1/2" />
+            </div>
+          ))
+        ) : (
+          balances.map(account => {
+            const isLow = account.balance !== null && account.balance < LOW_BALANCE_THRESHOLD;
+            const isWarning = account.balance !== null && account.balance >= LOW_BALANCE_THRESHOLD && account.balance < LOW_BALANCE_THRESHOLD * 2;
+            return (
+              <div
+                key={account.id}
+                className={cn(
+                  'rounded-xl p-4 border transition-colors',
+                  isLow
+                    ? 'bg-red-500/10 border-red-500/40'
+                    : isWarning
+                    ? 'bg-yellow-500/10 border-yellow-500/40'
+                    : 'bg-card border-border',
+                )}
+              >
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground leading-tight truncate flex-1" title={account.name}>
+                    {account.name}
+                  </p>
+                  {isLow && <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />}
+                </div>
+                {account.balance !== null ? (
+                  <p className={cn(
+                    'text-2xl font-bold font-heading',
+                    isLow ? 'text-red-400' : isWarning ? 'text-yellow-400' : 'text-foreground',
+                  )}>
+                    {formatCurrencyBRL(account.balance)}
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Erro ao carregar</p>
+                )}
+                <p className="text-[10px] font-mono text-muted-foreground mt-1">{account.id}</p>
+                {isLow && (
+                  <p className="text-[10px] font-bold text-red-400 mt-2 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" /> Saldo crítico — recarregue
+                  </p>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
 
 type ViewMode = 'dia' | 'semana' | 'mes';
 
@@ -436,6 +583,8 @@ export default function PagamentosPage() {
           <HolidayPaymentNotice date={newPayment.date} />
         </div>
       </div>
+
+      <AdAccountBalances />
 
       <div className="grid gap-3 md:grid-cols-5">
         {[
