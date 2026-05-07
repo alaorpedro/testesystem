@@ -116,7 +116,7 @@ function MetaAssetsPanel({ meta }: { meta: MetaIntegration }) {
       const data = await fetchMetaAssets(meta.accessToken);
       setAssets(data);
       // Persist ad accounts so client pages can use them for selection
-      saveCachedAdAccounts(data.adAccounts);
+      await saveCachedAdAccounts(data.adAccounts);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro ao buscar ativos.');
     } finally {
@@ -351,6 +351,8 @@ const LogoWebsite = () => (
 
 // ─── Meta Connect Modal (OAuth flow) ─────────────────────────────────────────
 
+const META_APP_ID = '4523722054582315';
+
 function MetaConnectModal({
   onClose,
   onConnected,
@@ -358,11 +360,6 @@ function MetaConnectModal({
   onClose: () => void;
   onConnected: (meta: MetaIntegration) => void;
 }) {
-  const [appId, setAppId] = useState('');
-
-  useEffect(() => {
-    loadIntegrations().then((s) => setAppId(s.meta.appId || '')).catch(() => {});
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [showGuide, setShowGuide] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -373,12 +370,10 @@ function MetaConnectModal({
   }
 
   async function handleFBLogin() {
-    const id = appId.trim();
-    if (!id) { setError('Informe o App ID antes de continuar.'); return; }
     setError('');
     setLoading(true);
     try {
-      const { accessToken, userId } = await fbLogin(id);
+      const { accessToken, userId } = await fbLogin(META_APP_ID);
 
       // Fetch user profile
       const meRes = await fetch(
@@ -388,14 +383,14 @@ function MetaConnectModal({
       if (me.error) throw new Error(me.error.message);
 
       const data: Omit<MetaIntegration, 'status' | 'connectedAt'> = {
-        appId: id,
+        appId: META_APP_ID,
         accessToken,
         userId,
         userName: me.name,
         userPicture: me.picture?.data?.url,
       };
-      connectMeta(data);
-      onConnected({ ...data, status: 'connected', connectedAt: new Date().toISOString() });
+      const savedMeta = await connectMeta(data);
+      onConnected(savedMeta);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro ao conectar.');
     } finally {
@@ -434,18 +429,9 @@ function MetaConnectModal({
             <p className="text-blue-300/80">Você entra com o Facebook e o sistema acessa automaticamente as contas de anúncio, páginas e perfis Instagram que seu perfil tem permissão — igual ao Reportei e Dashgo.</p>
           </div>
 
-          {/* App ID */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              App ID do Meta for Developers
-            </label>
-            <input
-              type="text"
-              value={appId}
-              onChange={(e) => { setAppId(e.target.value); setError(''); }}
-              placeholder="Ex: 1234567890123456"
-              className="w-full h-10 rounded-lg bg-background border border-border px-3 text-sm font-mono placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/50 transition"
-            />
+          <div className="rounded-lg border border-primary/20 bg-primary/10 px-3 py-2.5">
+            <p className="text-xs font-semibold uppercase tracking-wider text-primary">App Meta configurado</p>
+            <p className="mt-1 text-sm font-mono text-foreground">{META_APP_ID}</p>
           </div>
 
           {/* Guide accordion */}
@@ -455,16 +441,15 @@ function MetaConnectModal({
               onClick={() => setShowGuide((v) => !v)}
               className="w-full flex items-center justify-between px-3 py-2.5 bg-muted/30 text-xs text-muted-foreground font-semibold hover:bg-muted/50 transition-colors"
             >
-              <span>Como obter o App ID?</span>
+              <span>Checklist da conexão</span>
               <ChevronDown className={cn('w-4 h-4 transition-transform', showGuide && 'rotate-180')} />
             </button>
             {showGuide && (
               <div className="px-3 py-3 bg-muted/10 text-xs text-muted-foreground leading-relaxed space-y-2">
                 <ol className="list-decimal list-inside space-y-1">
-                  <li>Acesse <span className="font-mono text-foreground/70">developers.facebook.com/apps</span></li>
-                  <li>Selecione o app <strong className="text-foreground/80">ON_REPORT</strong> que você criou</li>
-                  <li>No painel do app, o <strong className="text-foreground/80">ID do aplicativo</strong> aparece no topo</li>
-                  <li>Certifique-se que o domínio <span className="font-mono text-foreground/70">localhost:3000</span> está em <strong className="text-foreground/80">Configurações → Básico → Domínios do app</strong></li>
+                  <li>O App ID já está fixado no sistema.</li>
+                  <li>Certifique-se que o domínio do sistema está liberado no app da Meta.</li>
+                  <li>Use um perfil Facebook com permissão nas contas de anúncio dos clientes.</li>
                 </ol>
                 <p className="text-muted-foreground/60 pt-1">O app precisa estar no modo <strong>Desenvolvimento</strong> para funcionar no localhost.</p>
               </div>
@@ -606,11 +591,16 @@ export default function IntegracoesPage() {
 
   async function handleMetaDisconnect() {
     await fbLogout().catch(() => {});
-    disconnectMeta();
-    setMetaInfo(null);
-    setIntegrations((prev) =>
-      prev.map((i) => (i.id === 'meta-ads' ? { ...i, status: 'desconectado' } : i))
-    );
+    try {
+      await disconnectMeta();
+      setMetaInfo(null);
+      setIntegrations((prev) =>
+        prev.map((i) => (i.id === 'meta-ads' ? { ...i, status: 'desconectado' } : i))
+      );
+    } catch (error) {
+      console.error('Erro ao desconectar Meta Ads:', error);
+      alert(error instanceof Error ? error.message : 'Erro ao salvar desconexão no Supabase.');
+    }
   }
 
   function toggleConnection(id: IntegrationId) {

@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { logActivity } from '@/lib/activity-log-store';
-import { supabase } from '@/lib/supabase';
+import { assertSupabaseConfigured, supabase } from '@/lib/supabase';
 
 export type PaymentChannel = 'Meta ADS' | 'Google ADS' | 'TikTok ADS';
 export type PaymentStatus = 'Pendente' | 'Enviado' | 'Pago' | 'Em atraso';
@@ -46,6 +46,7 @@ export function PaymentProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
+        assertSupabaseConfigured();
         const { data } = await supabase.from('payments').select('*').order('date');
         if (!data) return setPayments([]);
         const today = new Date().toISOString().split('T')[0];
@@ -62,7 +63,8 @@ export function PaymentProvider({ children }: { children: React.ReactNode }) {
         setPayments(mapped.map((p) =>
           p.status === 'Enviado' && p.date < today ? { ...p, status: 'Em atraso' as PaymentStatus } : p
         ));
-      } catch {
+      } catch (error) {
+        console.error('Erro ao carregar pagamentos do Supabase:', error);
         setPayments([]);
       } finally {
         setLoading(false);
@@ -73,23 +75,29 @@ export function PaymentProvider({ children }: { children: React.ReactNode }) {
   function addPayment(payment: Omit<InvestmentPayment, 'id'>) {
     const newPayment = { ...payment, id: `pay-${Date.now()}` };
     setPayments((prev) => [...prev, newPayment]);
-    void supabase.from('payments').insert({
-      id: newPayment.id,
-      client_id: newPayment.clientId,
-      client_name: newPayment.clientName,
-      date: newPayment.date,
-      destination: newPayment.destination,
-      amount: newPayment.amount,
-      channel: newPayment.channel,
-      status: newPayment.status,
-    });
+    void (async () => {
+      const { error } = await supabase.from('payments').insert({
+        id: newPayment.id,
+        client_id: newPayment.clientId,
+        client_name: newPayment.clientName,
+        date: newPayment.date,
+        destination: newPayment.destination,
+        amount: newPayment.amount,
+        channel: newPayment.channel,
+        status: newPayment.status,
+      });
+      if (error) console.error('Erro ao salvar pagamento no Supabase:', error);
+    })();
     const dateFormatted = payment.date.split('-').reverse().join('/');
     logActivity('payment_added', `Pix de ${fmtBRL(payment.amount)} adicionado para ${payment.clientName} (${payment.channel}) em ${dateFormatted}`);
   }
 
   function updatePaymentStatus(id: string, status: PaymentStatus) {
     setPayments((prev) => prev.map((p) => p.id === id ? { ...p, status } : p));
-    void supabase.from('payments').update({ status }).eq('id', id);
+    void (async () => {
+      const { error } = await supabase.from('payments').update({ status }).eq('id', id);
+      if (error) console.error('Erro ao atualizar pagamento no Supabase:', error);
+    })();
   }
 
   function deletePayment(id: string) {
@@ -101,7 +109,10 @@ export function PaymentProvider({ children }: { children: React.ReactNode }) {
       }
       return prev.filter((p) => p.id !== id);
     });
-    void supabase.from('payments').delete().eq('id', id);
+    void (async () => {
+      const { error } = await supabase.from('payments').delete().eq('id', id);
+      if (error) console.error('Erro ao excluir pagamento no Supabase:', error);
+    })();
   }
 
   return React.createElement(

@@ -15,6 +15,7 @@ import {
   BarChart3,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { APP_VERSION } from '@/lib/app-version';
 
 const navItems = [
   { name: 'Dashboard',  href: '/dashboard',   icon: LayoutDashboard },
@@ -32,12 +33,15 @@ export function Sidebar() {
   return (
     <aside className="w-64 bg-background border-r border-border h-screen flex flex-col sticky top-0 relative z-20">
       <div className="h-20 flex items-center px-6 border-b border-border">
-        <Link href="/dashboard" className="flex items-center">
+        <Link href="/dashboard" className="flex items-center gap-3">
           <img
             src="/brand/onmid-logo-white.png"
             alt="Onmid"
             className="h-8 w-auto max-w-[160px] object-contain"
           />
+          <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
+            v{APP_VERSION}
+          </span>
         </Link>
       </div>
 

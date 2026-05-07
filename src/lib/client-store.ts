@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { logActivity } from '@/lib/activity-log-store';
 import { mockClients, type Client, type ClientStatus } from '@/lib/mock-data';
-import { supabase } from '@/lib/supabase';
+import { assertSupabaseConfigured, supabase } from '@/lib/supabase';
 
 export const CURRENT_USER_ROLE = 'Administrador';
 
@@ -25,13 +25,15 @@ export function useClients() {
   useEffect(() => {
     (async () => {
       try {
+        assertSupabaseConfigured();
         const { data } = await supabase.from('clients').select('*').order('name');
         if (data && data.length > 0) {
           setClients(data.map((r) => ({ id: r.id, name: r.name, segment: r.segment, status: r.status as ClientStatus })));
         } else {
           setClients(mockClients);
         }
-      } catch {
+      } catch (error) {
+        console.error('Erro ao carregar clientes do Supabase:', error);
         setClients(mockClients);
       }
     })();
@@ -49,21 +51,33 @@ export function useClients() {
         status: input.status,
       };
       setClients((prev) => [...prev, client]);
-      void supabase.from('clients').upsert({ id: client.id, name: client.name, segment: client.segment, status: client.status });
+      void (async () => {
+        const { error } = await supabase.from('clients').upsert({ id: client.id, name: client.name, segment: client.segment, status: client.status });
+        if (error) console.error('Erro ao salvar cliente no Supabase:', error);
+      })();
       logActivity('client_created', `Cliente ${client.name} criado no segmento ${client.segment}`);
       return client;
     },
     archiveClient(id: string) {
       setClients((prev) => prev.map((c) => c.id === id ? { ...c, status: 'Arquivado' as ClientStatus } : c));
-      void supabase.from('clients').update({ status: 'Arquivado' }).eq('id', id);
+      void (async () => {
+        const { error } = await supabase.from('clients').update({ status: 'Arquivado' }).eq('id', id);
+        if (error) console.error('Erro ao arquivar cliente no Supabase:', error);
+      })();
     },
     restoreClient(id: string) {
       setClients((prev) => prev.map((c) => c.id === id ? { ...c, status: 'Ativo' as ClientStatus } : c));
-      void supabase.from('clients').update({ status: 'Ativo' }).eq('id', id);
+      void (async () => {
+        const { error } = await supabase.from('clients').update({ status: 'Ativo' }).eq('id', id);
+        if (error) console.error('Erro ao restaurar cliente no Supabase:', error);
+      })();
     },
     deleteClient(id: string) {
       setClients((prev) => prev.filter((c) => c.id !== id));
-      void supabase.from('clients').delete().eq('id', id);
+      void (async () => {
+        const { error } = await supabase.from('clients').delete().eq('id', id);
+        if (error) console.error('Erro ao excluir cliente no Supabase:', error);
+      })();
     },
   }), [archivedClients, clients, visibleClients]);
 }

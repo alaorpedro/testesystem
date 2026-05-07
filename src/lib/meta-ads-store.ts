@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { assertSupabaseConfigured, supabase } from '@/lib/supabase';
 
 export type MetaAdsMetrics = {
   spend: number;
@@ -95,6 +95,7 @@ export function useMetaAdsConnections() {
   useEffect(() => {
     (async () => {
       try {
+        assertSupabaseConfigured();
         const { data } = await supabase.from('meta_ads_connections').select('*');
         if (!data) return;
         setConnections(
@@ -107,8 +108,8 @@ export function useMetaAdsConnections() {
             lastSync: row.last_sync ?? new Date().toISOString(),
           }))
         );
-      } catch {
-        // silently ignore
+      } catch (error) {
+        console.error('Erro ao carregar vínculos Meta Ads do Supabase:', error);
       }
     })();
   }, []);
@@ -139,19 +140,25 @@ export function useMetaAdsConnections() {
         lastSync: now,
       };
       setConnections((prev) => [...prev.filter((c) => c.clientId !== clientId), conn]);
-      void supabase.from('meta_ads_connections').upsert({
-        client_id: conn.clientId,
-        profile_id: conn.profileId,
-        account_ids: conn.accountIds,
-        status: conn.status,
-        connected_at: conn.connectedAt,
-        last_sync: conn.lastSync,
-      });
+      void (async () => {
+        const { error } = await supabase.from('meta_ads_connections').upsert({
+          client_id: conn.clientId,
+          profile_id: conn.profileId,
+          account_ids: conn.accountIds,
+          status: conn.status,
+          connected_at: conn.connectedAt,
+          last_sync: conn.lastSync,
+        });
+        if (error) console.error('Erro ao salvar vínculo Meta Ads no Supabase:', error);
+      })();
     }
 
     function disconnectClient(clientId: string) {
       setConnections((prev) => prev.filter((c) => c.clientId !== clientId));
-      void supabase.from('meta_ads_connections').delete().eq('client_id', clientId);
+      void (async () => {
+        const { error } = await supabase.from('meta_ads_connections').delete().eq('client_id', clientId);
+        if (error) console.error('Erro ao remover vínculo Meta Ads no Supabase:', error);
+      })();
     }
 
     return { connections, getConnection, getClientAccounts, getClientMetrics, saveConnection, disconnectClient };

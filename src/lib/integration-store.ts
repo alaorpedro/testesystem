@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { assertSupabaseConfigured, supabase } from '@/lib/supabase';
 
 export type MetaConnectionStatus = 'disconnected' | 'connected' | 'error';
 
@@ -50,6 +50,7 @@ export async function loadIntegrations(): Promise<IntegrationStore> {
 
   _loadPromise = (async () => {
     try {
+      assertSupabaseConfigured();
       const { data } = await supabase
         .from('meta_integration')
         .select('*')
@@ -69,8 +70,8 @@ export async function loadIntegrations(): Promise<IntegrationStore> {
           },
         };
       }
-    } catch {
-      // fall back to default
+    } catch (error) {
+      console.error('Erro ao carregar integração Meta:', error);
     }
     return _cache;
   })();
@@ -82,10 +83,11 @@ export function readIntegrations(): IntegrationStore {
   return _cache;
 }
 
-export function saveIntegrations(store: IntegrationStore): void {
+export async function saveIntegrations(store: IntegrationStore): Promise<void> {
+  assertSupabaseConfigured();
   _cache = store;
   const meta = store.meta;
-  void supabase.from('meta_integration').upsert({
+  const { error } = await supabase.from('meta_integration').upsert({
     id: 'global',
     status: meta.status,
     app_id: meta.appId,
@@ -95,22 +97,26 @@ export function saveIntegrations(store: IntegrationStore): void {
     meta_user_picture: meta.userPicture ?? null,
     connected_at: meta.connectedAt,
   });
+
+  if (error) throw error;
 }
 
-export function connectMeta(data: Omit<MetaIntegration, 'status' | 'connectedAt'>): void {
+export async function connectMeta(data: Omit<MetaIntegration, 'status' | 'connectedAt'>): Promise<MetaIntegration> {
   const newMeta: MetaIntegration = { ...data, status: 'connected', connectedAt: new Date().toISOString() };
   _cache = { meta: newMeta };
   _loadPromise = null;
-  saveIntegrations(_cache);
+  await saveIntegrations(_cache);
+  return newMeta;
 }
 
-export function disconnectMeta(): void {
+export async function disconnectMeta(): Promise<void> {
   _cache = DEFAULT_STORE;
   _loadPromise = null;
-  saveIntegrations(_cache);
+  await saveIntegrations(_cache);
   _assetsCache = [];
   _assetsLoadPromise = null;
-  void supabase.from('meta_assets_cache').delete().neq('id', 'none');
+  const { error } = await supabase.from('meta_assets_cache').delete().neq('id', 'none');
+  if (error) throw error;
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('meta-assets-updated'));
   }
@@ -123,6 +129,7 @@ export async function loadCachedAdAccounts(): Promise<CachedAdAccount[]> {
 
   _assetsLoadPromise = (async () => {
     try {
+      assertSupabaseConfigured();
       const { data } = await supabase.from('meta_assets_cache').select('*');
       if (data && data.length > 0) {
         _assetsCache = data.map((r) => ({
@@ -133,8 +140,8 @@ export async function loadCachedAdAccounts(): Promise<CachedAdAccount[]> {
           amount_spent: r.amount_spent ?? undefined,
         }));
       }
-    } catch {
-      // fall back
+    } catch (error) {
+      console.error('Erro ao carregar contas Meta em cache:', error);
     }
     return _assetsCache;
   })();
@@ -146,12 +153,13 @@ export function readCachedAdAccounts(): CachedAdAccount[] {
   return _assetsCache;
 }
 
-export function saveCachedAdAccounts(accounts: CachedAdAccount[]): void {
+export async function saveCachedAdAccounts(accounts: CachedAdAccount[]): Promise<void> {
+  assertSupabaseConfigured();
   _assetsCache = accounts;
   _assetsLoadPromise = null;
 
   if (accounts.length > 0) {
-    void supabase.from('meta_assets_cache').upsert(
+    const { error } = await supabase.from('meta_assets_cache').upsert(
       accounts.map((a) => ({
         id: a.id,
         name: a.name,
@@ -160,6 +168,7 @@ export function saveCachedAdAccounts(accounts: CachedAdAccount[]): void {
         amount_spent: a.amount_spent ?? null,
       }))
     );
+    if (error) throw error;
   }
 
   if (typeof window !== 'undefined') {

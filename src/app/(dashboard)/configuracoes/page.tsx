@@ -23,7 +23,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { mockUsers as initialUsers, mockPermissions as initialPermissions } from '@/lib/mock-data';
 import type { User, Permission } from '@/lib/mock-data';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/lib/supabase';
+import { assertSupabaseConfigured, supabase } from '@/lib/supabase';
 
 const MODULES: { key: keyof Permission; label: string }[] = [
   { key: 'dashboard', label: 'Dashboard' },
@@ -39,15 +39,24 @@ const defaultPermission: Permission = { dashboard: true, clientes: false, relato
 const emptyForm = { name: '', email: '', password: '', role: 'Usuário', status: 'Ativo' };
 
 function persistUser(user: User) {
-  void supabase.from('users').upsert({ id: user.id, name: user.name, email: user.email, password: user.password, role: user.role, status: user.status });
+  void (async () => {
+    const { error } = await supabase.from('users').upsert({ id: user.id, name: user.name, email: user.email, password: user.password, role: user.role, status: user.status });
+    if (error) console.error('Erro ao salvar usuário no Supabase:', error);
+  })();
 }
 
 function removeUser(id: string) {
-  void supabase.from('users').delete().eq('id', id);
+  void (async () => {
+    const { error } = await supabase.from('users').delete().eq('id', id);
+    if (error) console.error('Erro ao remover usuário no Supabase:', error);
+  })();
 }
 
 function persistPermission(userId: string, permission: Permission) {
-  void supabase.from('user_permissions').upsert({ user_id: userId, ...permission });
+  void (async () => {
+    const { error } = await supabase.from('user_permissions').upsert({ user_id: userId, ...permission });
+    if (error) console.error('Erro ao salvar permissão no Supabase:', error);
+  })();
 }
 
 export default function ConfiguracoesPage() {
@@ -61,18 +70,20 @@ export default function ConfiguracoesPage() {
   useEffect(() => {
     (async () => {
       try {
+        assertSupabaseConfigured();
         const { data: usersData } = await supabase.from('users').select('*');
         if (usersData && usersData.length > 0) setUsers(usersData as User[]);
-      } catch { /* ignore */ }
+      } catch (error) { console.error('Erro ao carregar usuários do Supabase:', error); }
 
       try {
+        assertSupabaseConfigured();
         const { data: permsData } = await supabase.from('user_permissions').select('*');
         if (permsData) {
           const map: Record<string, Permission> = { ...initialPermissions };
           permsData.forEach((r) => { map[r.user_id] = { dashboard: r.dashboard, clientes: r.clientes, relatorios: r.relatorios, configuracoes: r.configuracoes, integracoes: r.integracoes }; });
           setPermissions(map);
         }
-      } catch { /* ignore */ }
+      } catch (error) { console.error('Erro ao carregar permissões do Supabase:', error); }
     })();
   }, []);
 

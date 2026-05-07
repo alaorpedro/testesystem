@@ -1,6 +1,6 @@
 "use client";
 
-import { supabase } from '@/lib/supabase';
+import { assertSupabaseConfigured, supabase } from '@/lib/supabase';
 import { getAuthSession } from '@/lib/auth-store';
 
 export type ActivityType = 'payment_added' | 'payment_deleted' | 'client_created';
@@ -19,16 +19,25 @@ export function logActivity(type: ActivityType, description: string): void {
   const session = typeof window !== 'undefined' ? getAuthSession() : null;
   const actor = session?.name ?? CURRENT_USER;
 
-  void supabase.from('activity_logs').insert({
-    id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    type,
-    actor,
-    description,
-    created_at: new Date().toISOString(),
-  });
+  void (async () => {
+    try {
+      assertSupabaseConfigured();
+      const { error } = await supabase.from('activity_logs').insert({
+        id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        type,
+        actor,
+        description,
+        created_at: new Date().toISOString(),
+      });
+      if (error) console.error('Erro ao salvar log no Supabase:', error);
+    } catch (error) {
+      console.error('Erro ao salvar log no Supabase:', error);
+    }
+  })();
 }
 
 export async function readActivityLog(): Promise<ActivityEntry[]> {
+  assertSupabaseConfigured();
   const { data } = await supabase
     .from('activity_logs')
     .select('*')
@@ -46,5 +55,6 @@ export async function readActivityLog(): Promise<ActivityEntry[]> {
 }
 
 export async function clearActivityLog(): Promise<void> {
+  assertSupabaseConfigured();
   await supabase.from('activity_logs').delete().neq('id', 'none');
 }
